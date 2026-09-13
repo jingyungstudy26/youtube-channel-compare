@@ -1355,7 +1355,7 @@
     // 화면 "비교 결과" 표에 보이는 내용(현재 필터가 적용된 상태)을,
     // 매일 자동 수집되는 히스토리 데이터와 같은 정규화 포맷(9개 컬럼)으로 내보낸다.
     var RESULT_HEADERS = [
-      "기준일", "다운로드 시간", "Channel", "Content", "Type", "VIDEO_ID", "Views", "Likes", "Comments"
+      "기준일", "다운로드 시간", "Channel", "Content", "Type", "VIDEO_ID", "Views", "Likes", "Comments", "업로드일"
     ];
 
     // "롱폼"/"쇼츠"(화면 표시용 한글)를 히스토리 데이터와 같은 영문 Type 값으로 바꾼다.
@@ -1427,7 +1427,8 @@
           row.videoId,
           row.viewCount != null ? row.viewCount : "-",
           row.likeCount != null ? row.likeCount : "-",
-          row.commentCount != null ? row.commentCount : "-"
+          row.commentCount != null ? row.commentCount : "-",
+          formatDate(row.publishedAt)
         ];
       });
       return [RESULT_HEADERS].concat(body);
