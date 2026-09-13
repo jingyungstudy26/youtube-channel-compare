@@ -1358,10 +1358,40 @@
       "좋아요", "좋아요 증가", "댓글수", "댓글 증가", "신규", "영상 링크"
     ];
 
-    // 유튜브 API가 한글을 자모 분리(NFD) 형태로 내려줄 때가 있어 엑셀에서 깨져 보인다.
-    // 완성형(NFC)으로 통일해서 엑셀에 써준다.
+    // 유튜브 API가 한글을 두 가지 방식으로 깨진 채 내려줄 때가 있어 엑셀에서 깨져 보인다.
+    // 1) 합쳐진 글자를 풀어쓴 형태(NFD) → normalize("NFC")로 복원
+    // 2) 자음/모음을 낱개 문자로 나열한 형태(호환 자모) → 아래 조합 로직으로 복원
+    var JAMO_CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+    var JAMO_JUNG = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ";
+    var JAMO_JONG = "_ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ";
+
+    function composeHangulJamo(str) {
+      var out = "", i = 0;
+      while (i < str.length) {
+        var choIdx = JAMO_CHO.indexOf(str[i]);
+        if (choIdx !== -1 && i + 1 < str.length) {
+          var jungIdx = JAMO_JUNG.indexOf(str[i + 1]);
+          if (jungIdx !== -1) {
+            var jongIdx = 0, consumed = 2;
+            if (i + 2 < str.length) {
+              var maybeJong = JAMO_JONG.indexOf(str[i + 2]);
+              var followsVowel = maybeJong > 0 && i + 3 < str.length && JAMO_JUNG.indexOf(str[i + 3]) !== -1;
+              if (maybeJong > 0 && !followsVowel) { jongIdx = maybeJong; consumed = 3; }
+            }
+            out += String.fromCharCode(0xAC00 + (choIdx * 21 + jungIdx) * 28 + jongIdx);
+            i += consumed;
+            continue;
+          }
+        }
+        out += str[i];
+        i += 1;
+      }
+      return out;
+    }
+
     function toNFC(value) {
-      return typeof value === "string" ? value.normalize("NFC") : value;
+      if (typeof value !== "string") return value;
+      return composeHangulJamo(value.normalize("NFC"));
     }
 
     function buildExportRows() {
