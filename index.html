@@ -1,0 +1,1400 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>유튜브 채용 채널 비교 도구</title>
+<!-- 엑셀(.xlsx) 내보내기용 라이브러리 (5단계) -->
+<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  /* ── 디자인 토큰 ─────────────────────────────────────────── */
+  :root {
+    --color-page-bg: #f3f4f8;
+    --color-surface: #ffffff;
+    --color-border: #e4e6ec;
+    --color-text: #1a1d29;
+    --color-text-muted: #666a7a;   /* 배경 대비 4.5:1 이상 */
+    --color-primary: #3b5bfd;
+    --color-primary-hover: #2d47d1;
+    --color-accent-purple: #7c5cff;
+    --color-danger: #c0362c;
+    --color-danger-bg: #fdecea;
+    --color-success-bg: #eaf6ec;
+    --color-new-badge: #1a7f37;
+    --radius: 12px;
+    --radius-lg: 16px;
+    --card-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 2px 6px rgba(16, 24, 40, 0.06);
+    --focus-ring: 3px solid #3b5bfd;
+
+    --sidebar-width: 232px;
+    --sidebar-bg: #14151f;
+    --sidebar-text: #c7c9d9;
+    --sidebar-text-muted: #82869c;
+    --sidebar-active-bg: rgba(124, 92, 255, 0.18);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    color: var(--color-text);
+    background: var(--color-page-bg);
+    line-height: 1.5;
+  }
+
+  a:focus-visible, button:focus-visible, input:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  /* ── 전체 레이아웃: 사이드바 + 콘텐츠 ───────────────────────── */
+  .app-shell {
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ── 사이드바 ────────────────────────────────────────────── */
+  .sidebar {
+    width: var(--sidebar-width);
+    flex: 0 0 var(--sidebar-width);
+    background: var(--sidebar-bg);
+    color: var(--sidebar-text);
+    padding: 20px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px 24px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.0625rem;
+  }
+  .sidebar-brand-mark {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-accent-purple));
+    flex: 0 0 auto;
+  }
+  .sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .sidebar-nav button {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: var(--radius);
+    padding: 11px 12px;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+  .sidebar-nav button:hover { background: rgba(255, 255, 255, 0.06); color: #fff; }
+  .sidebar-nav button[aria-current="page"] {
+    background: var(--sidebar-active-bg);
+    color: #fff;
+    font-weight: 700;
+    box-shadow: inset 3px 0 0 var(--color-accent-purple);
+  }
+  .sidebar-nav .icon {
+    width: 20px;
+    text-align: center;
+    flex: 0 0 auto;
+  }
+
+  /* ── 콘텐츠 영역 ─────────────────────────────────────────── */
+  .content-area {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 24px 32px 80px;
+  }
+
+  .topbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 24px;
+  }
+  .topbar h1 {
+    font-size: 1.375rem;
+    margin: 0;
+  }
+  .topbar .last-updated {
+    font-size: 0.875rem;
+    color: var(--color-text-muted);
+  }
+
+  .tab-panel { display: none; }
+  .tab-panel.is-active { display: block; }
+
+  section.card {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--card-shadow);
+    padding: 22px;
+    margin-bottom: 20px;
+  }
+  section.card h2 {
+    font-size: 1rem;
+    margin: 0 0 14px;
+  }
+
+  /* ── 채널 관리 ───────────────────────────────────────────── */
+  .channel-add-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .channel-add-row label {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .channel-add-row input[type="text"] {
+    flex: 1 1 260px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-size: 1rem;
+  }
+  .channel-add-row input[type="text"]:focus-visible {
+    border-color: var(--color-primary);
+  }
+
+  button {
+    font: inherit;
+    cursor: pointer;
+    border-radius: var(--radius);
+    border: 1px solid transparent;
+    padding: 10px 16px;
+  }
+  button.btn-primary {
+    background: var(--color-primary);
+    color: #fff;
+  }
+  button.btn-primary:hover { background: var(--color-primary-hover); }
+  button.btn-primary:disabled {
+    background: #b7c0f5;
+    cursor: not-allowed;
+  }
+  button.btn-secondary {
+    background: #fff;
+    border-color: var(--color-border);
+    color: var(--color-text);
+  }
+  button.btn-secondary:hover { background: var(--color-page-bg); }
+  button.btn-secondary:disabled {
+    color: var(--color-text-muted);
+    cursor: not-allowed;
+  }
+  button.btn-danger-text {
+    background: transparent;
+    border: none;
+    color: var(--color-danger);
+    padding: 6px 10px;
+    text-decoration: underline;
+  }
+  button.btn-link {
+    background: none;
+    border: none;
+    color: var(--color-primary);
+    text-decoration: underline;
+    padding: 0;
+    font-weight: 600;
+  }
+
+  ul.channel-list {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0;
+  }
+  ul.channel-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 4px;
+    border-bottom: 1px solid var(--color-border);
+  }
+  ul.channel-list li:last-child { border-bottom: none; }
+  .channel-name { font-weight: 600; }
+  .channel-sub { color: var(--color-text-muted); font-size: 0.875rem; margin-left: 8px; }
+  .channel-empty-hint {
+    color: var(--color-text-muted);
+    font-size: 0.9375rem;
+    padding: 8px 4px 0;
+  }
+  .input-error {
+    color: var(--color-danger);
+    font-size: 0.875rem;
+    margin: -10px 0 12px;
+    display: none;
+  }
+  .input-error.is-active { display: block; }
+
+  .n-setting {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9375rem;
+  }
+  .n-setting input[type="number"] {
+    width: 72px;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-size: 1rem;
+  }
+  .n-setting input[type="number"]:focus-visible {
+    border-color: var(--color-accent-purple);
+  }
+
+  /* ── 비교 결과 ───────────────────────────────────────────── */
+  .action-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--card-shadow);
+    padding: 16px 22px;
+    margin-bottom: 20px;
+  }
+  .action-row .buttons {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .channel-count-badge {
+    display: inline-block;
+    background: var(--sidebar-active-bg);
+    color: var(--color-accent-purple);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 999px;
+  }
+
+  .new-summary {
+    background: var(--color-success-bg);
+    box-shadow: none;
+    border: 1px solid #b7dfc0;
+  }
+  .new-summary ul {
+    margin: 0;
+    padding-left: 20px;
+  }
+  .new-badge {
+    display: inline-block;
+    background: var(--color-new-badge);
+    color: #fff;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-right: 6px;
+  }
+
+  /* ── 결과 표 필터 ─────────────────────────────────────────── */
+  .result-filter-row {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .result-filter-row label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+    font-weight: 600;
+  }
+  .result-filter-row input[type="text"],
+  .result-filter-row select {
+    font: inherit;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-size: 0.9375rem;
+    min-width: 160px;
+    color: var(--color-text);
+    background: #fff;
+  }
+  .result-filter-row input[type="text"]:focus-visible,
+  .result-filter-row select:focus-visible {
+    border-color: var(--color-primary);
+  }
+
+  .table-scroll { overflow-x: auto; }
+  table.result-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9375rem;
+    min-width: 640px;
+  }
+  table.result-table th,
+  table.result-table td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--color-border);
+    white-space: nowrap;
+  }
+  table.result-table th {
+    color: var(--color-text-muted);
+    font-weight: 600;
+    font-size: 0.8125rem;
+  }
+  .delta-up { color: var(--color-new-badge); }
+  .result-table a { color: var(--color-primary); font-weight: 600; }
+
+  .state-panel {
+    display: none;
+    text-align: center;
+    padding: 48px 20px;
+    color: var(--color-text-muted);
+  }
+  .state-panel.is-active { display: block; }
+  .state-panel h2 {
+    color: var(--color-text);
+    font-size: 1.125rem;
+    margin: 0 0 8px;
+  }
+
+  .state-error {
+    background: var(--color-danger-bg);
+    box-shadow: none;
+    border: 1px solid #f2b8b3;
+    border-radius: var(--radius-lg);
+    text-align: left;
+    padding: 20px;
+  }
+  .state-error h2 { color: var(--color-danger); }
+
+  .progress-track {
+    width: 100%;
+    max-width: 360px;
+    height: 8px;
+    background: var(--color-border);
+    border-radius: 999px;
+    margin: 16px auto 8px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--color-primary), var(--color-accent-purple));
+    width: 0%;
+    transition: width 0.2s ease;
+  }
+
+  /* ── API 키 입력 폼 (에러 화면 안에 표시) ─────────────────────── */
+  .api-key-form {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid #f2b8b3;
+  }
+  .api-key-form label {
+    display: block;
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .api-key-form-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .api-key-form input[type="text"] {
+    flex: 1 1 260px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    font-size: 1rem;
+  }
+  .api-key-form p {
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+    margin: 8px 0 0;
+  }
+  .api-key-form a { color: var(--color-primary); }
+
+  .channel-error-text {
+    display: block;
+    color: var(--color-danger);
+    font-size: 0.8125rem;
+    margin-top: 2px;
+  }
+
+  /* ── 삭제 취소용 토스트 (§1-2b: Undo > Confirm) ─────────────── */
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%) translateY(8px);
+    background: #14151f;
+    color: #fff;
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    font-size: 0.9375rem;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    z-index: 200;
+  }
+  .toast.is-visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+  }
+  .toast button {
+    background: none;
+    border: none;
+    color: #a9b8ff;
+    text-decoration: underline;
+    padding: 0;
+    font-weight: 600;
+  }
+
+  /* ── 반응형: 좁은 화면에서는 사이드바를 상단 바로 ───────────── */
+  @media (max-width: 720px) {
+    .app-shell { flex-direction: column; }
+    .sidebar {
+      width: auto;
+      flex: 0 0 auto;
+      flex-direction: row;
+      align-items: center;
+      padding: 10px 12px;
+      overflow-x: auto;
+    }
+    .sidebar-brand { padding: 4px 10px; }
+    .sidebar-nav { flex-direction: row; }
+    .sidebar-nav button[aria-current="page"] { box-shadow: inset 0 -3px 0 var(--color-accent-purple); }
+    .content-area { padding: 20px 16px 80px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- ── 사이드바 (주 내비게이션) ── -->
+  <nav class="sidebar" aria-label="주요 화면 전환">
+    <div class="sidebar-brand">
+      <span class="sidebar-brand-mark" aria-hidden="true"></span>
+      <span>채용채널 비교</span>
+    </div>
+    <div class="sidebar-nav">
+      <button type="button" id="tabBtnChannel" aria-controls="tabPanelChannel" aria-current="page">
+        <span class="icon" aria-hidden="true">📋</span> 채널 관리
+      </button>
+      <button type="button" id="tabBtnCompare" aria-controls="tabPanelCompare" aria-current="false">
+        <span class="icon" aria-hidden="true">📊</span> 비교 결과
+      </button>
+    </div>
+  </nav>
+
+  <!-- ── 콘텐츠 영역 ── -->
+  <div class="content-area">
+
+    <div class="topbar">
+      <h1 id="pageTitle">채널 관리</h1>
+      <span class="last-updated">마지막 갱신: <time id="lastUpdatedText">아직 없음</time></span>
+    </div>
+
+    <!-- ══════════ 채널 관리 (설정 과업) ══════════ -->
+    <section class="tab-panel is-active" id="tabPanelChannel" aria-labelledby="tabBtnChannel">
+
+      <section class="card" aria-labelledby="channelSectionTitle">
+        <h2 id="channelSectionTitle">채널 등록</h2>
+
+        <form class="channel-add-row" id="addChannelForm" novalidate>
+          <label for="channelInput">채널 URL 또는 @핸들</label>
+          <input
+            type="text"
+            id="channelInput"
+            name="channelInput"
+            placeholder="예: https://youtube.com/@samsungcareers 또는 @samsungcareers"
+            autocomplete="off"
+            aria-describedby="channelInputError"
+          />
+          <button type="submit" class="btn-primary">채널 추가</button>
+        </form>
+        <p class="input-error" id="channelInputError" role="alert"></p>
+
+        <ul class="channel-list" id="channelList"></ul>
+        <p class="channel-empty-hint" id="channelEmptyHint">아직 등록된 채널이 없습니다.</p>
+      </section>
+
+      <section class="card" aria-labelledby="nSettingTitle">
+        <h2 id="nSettingTitle">비교 설정</h2>
+        <div class="n-setting">
+          <label for="nSetting">채널당 비교할 최근 영상 개수</label>
+          <input type="number" id="nSetting" name="nSetting" value="10" min="5" max="20" step="1" />
+          <span>개 (5~20)</span>
+        </div>
+      </section>
+
+    </section>
+
+    <!-- ══════════ 비교 결과 (실행 + 조회 과업) ══════════ -->
+    <section class="tab-panel" id="tabPanelCompare" aria-labelledby="tabBtnCompare">
+
+      <div class="action-row">
+        <span class="channel-count-badge" id="registeredChannelCount">등록된 채널 0개</span>
+        <div class="buttons">
+          <button type="button" class="btn-primary" id="refreshBtn">새로고침</button>
+          <button type="button" class="btn-secondary" id="exportBtn">엑셀로 내보내기</button>
+        </div>
+      </div>
+
+      <!-- 상태 패널: 빈 상태 (채널이 하나도 없을 때) -->
+      <section class="state-panel" id="stateEmpty" aria-live="polite">
+        <h2>비교할 채널을 먼저 추가해주세요</h2>
+        <p><button type="button" class="btn-link" id="goToChannelTabBtn">채널 관리로 이동</button></p>
+      </section>
+
+      <!-- 상태 패널: 로딩 상태 -->
+      <section class="state-panel" id="stateLoading" aria-live="polite">
+        <h2>새로고침 중...</h2>
+        <p id="loadingProgressText">0 / 0 채널 처리 중</p>
+        <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      </section>
+
+      <!-- 상태 패널: 에러 상태 -->
+      <section class="state-panel state-error" id="stateError" aria-live="assertive">
+        <h2>문제가 발생했습니다</h2>
+        <p id="errorMessageText">오늘 무료 사용량이 초과되었습니다. 본인의 무료 API 키를 입력하면 계속 이용할 수 있어요.</p>
+        <button type="button" class="btn-secondary" id="retryBtn">다시 시도</button>
+
+        <div class="api-key-form" id="apiKeyForm">
+          <label for="apiKeyInput">본인의 유튜브 API 키</label>
+          <div class="api-key-form-row">
+            <input type="text" id="apiKeyInput" name="apiKeyInput" placeholder="YouTube Data API 키를 붙여넣으세요" autocomplete="off" />
+            <button type="button" class="btn-primary" id="saveApiKeyBtn">키 저장하고 다시 시도</button>
+          </div>
+          <p>키는 이 브라우저에만 저장되며, 다른 사람에게 전달되지 않아요. 키가 없다면 <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console</a>에서 무료로 발급받을 수 있어요 (YouTube Data API v3 사용 설정 필요).</p>
+        </div>
+      </section>
+
+      <!-- 상태 패널: 성공 (신규 요약 + 결과 표) -->
+      <section class="state-panel" id="stateSuccess">
+        <section class="card new-summary" id="newSummarySection">
+          <h2 id="newSummaryTitle">이번에 새로 올라온 영상 0건</h2>
+          <ul id="newSummaryList"></ul>
+        </section>
+
+        <section class="card">
+          <h2>비교 결과</h2>
+
+          <div class="result-filter-row">
+            <label for="filterChannel">채널
+              <select id="filterChannel"><option value="">전체 채널</option></select>
+            </label>
+            <label for="filterTitle">영상 제목 검색
+              <input type="text" id="filterTitle" placeholder="예: 채용" autocomplete="off" />
+            </label>
+            <label for="filterFormat">구분
+              <select id="filterFormat">
+                <option value="">전체</option>
+                <option value="롱폼">롱폼</option>
+                <option value="쇼츠">쇼츠</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="table-scroll">
+            <table class="result-table">
+              <thead>
+                <tr>
+                  <th>채널명</th>
+                  <th>영상 제목</th>
+                  <th>업로드일</th>
+                  <th>구분</th>
+                  <th>조회수</th>
+                  <th>조회수 증가</th>
+                  <th>좋아요</th>
+                  <th>좋아요 증가</th>
+                  <th>댓글수</th>
+                  <th>댓글 증가</th>
+                  <th>신규</th>
+                  <th>영상 링크</th>
+                </tr>
+              </thead>
+              <tbody id="resultTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+    </section>
+
+  </div>
+</div>
+
+<div class="toast" id="undoToast" role="status">
+  <span id="undoToastText">채널을 삭제했습니다</span>
+  <button type="button" id="undoToastBtn">실행취소</button>
+</div>
+
+<script>
+  (function () {
+    "use strict";
+
+    /* ══════════ 사이드바 내비게이션 ══════════ */
+    var tabs = [
+      { btn: "tabBtnChannel", panel: "tabPanelChannel", title: "채널 관리" },
+      { btn: "tabBtnCompare", panel: "tabPanelCompare", title: "비교 결과" }
+    ];
+    var pageTitleEl = document.getElementById("pageTitle");
+
+    function showTab(panelId) {
+      tabs.forEach(function (t) {
+        var isActive = t.panel === panelId;
+        document.getElementById(t.panel).classList.toggle("is-active", isActive);
+        document.getElementById(t.btn).setAttribute("aria-current", isActive ? "page" : "false");
+        if (isActive) pageTitleEl.textContent = t.title;
+      });
+    }
+
+    tabs.forEach(function (t) {
+      document.getElementById(t.btn).addEventListener("click", function () {
+        showTab(t.panel);
+      });
+    });
+
+    document.getElementById("goToChannelTabBtn").addEventListener("click", function () {
+      showTab("tabPanelChannel");
+    });
+
+    /* ══════════ 상태 패널 전환 (비교 결과 내부) ══════════ */
+    // stateEmpty는 실제 등록된 채널 수에 따라 자동으로 전환된다(아래 render 참고).
+    var statePanels = ["stateEmpty", "stateLoading", "stateError", "stateSuccess"];
+
+    function showState(stateId) {
+      statePanels.forEach(function (id) {
+        document.getElementById(id).classList.toggle("is-active", id === stateId);
+      });
+    }
+
+    /* ══════════ localStorage 저장/불러오기 ══════════ */
+    var CHANNEL_LIST_KEY = "yt_compare_channel_list_v1";
+    var SETTINGS_KEY = "yt_compare_settings_v1";
+
+    // 이 브라우저에서 한 번도 채널을 저장한 적이 없는 "첫 방문"일 때만 아래 목록으로 미리 채워둔다.
+    // 이후 사용자가 추가/삭제하면 그 결과가 그대로 저장되고, 다음 방문 때 기본 목록으로 되돌아가지 않는다.
+    var DEFAULT_CHANNEL_HANDLES = [
+      "cjrecruit",
+      "HD.HYUNDAI",
+      "SKhynix",
+      "recruit_hyundai",
+      "LGEnergySolution",
+      "lge-careers",
+      "channelgsenc",
+      "lotteshopping",
+      "samsungshi",
+      "HanwhaOceanOfficial",
+      "hanwhainsurance"
+    ];
+
+    function buildDefaultChannels() {
+      return DEFAULT_CHANNEL_HANDLES.map(function (handle) {
+        return {
+          id: "local_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
+          type: "handle",
+          value: handle,
+          channelTitle: null,
+          subscriberCount: null,
+          lastError: null,
+          addedAt: new Date().toISOString()
+        };
+      });
+    }
+
+    function loadChannels() {
+      try {
+        var raw = localStorage.getItem(CHANNEL_LIST_KEY);
+        if (raw === null) {
+          var defaults = buildDefaultChannels();
+          saveChannels(defaults);
+          return defaults;
+        }
+        return JSON.parse(raw);
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveChannels(list) {
+      localStorage.setItem(CHANNEL_LIST_KEY, JSON.stringify(list));
+    }
+
+    function loadSettings() {
+      try {
+        var raw = localStorage.getItem(SETTINGS_KEY);
+        return raw ? JSON.parse(raw) : { n: 10, userApiKey: null };
+      } catch (e) {
+        return { n: 10, userApiKey: null };
+      }
+    }
+
+    function saveSettings(settings) {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    }
+
+    var channels = loadChannels();
+    var settings = loadSettings();
+    var lastResultRows = []; // 마지막으로 성공한 새로고침 결과 — 엑셀 내보내기(5단계)에 사용
+
+    /* ══════════ 채널 입력값 해석 (명세서 §4-4) ══════════ */
+    function parseChannelInput(rawInput) {
+      var trimmed = rawInput.trim();
+      if (!trimmed) {
+        return { ok: false, message: "채널 URL 또는 @핸들을 입력해주세요." };
+      }
+
+      var handleMatch = trimmed.match(/(?:youtube\.com\/)?@([a-zA-Z0-9._-]+)/);
+      if (trimmed.charAt(0) === "@" || handleMatch) {
+        var handle = trimmed.charAt(0) === "@" ? trimmed.slice(1) : handleMatch[1];
+        return { ok: true, type: "handle", value: handle };
+      }
+
+      var idMatch = trimmed.match(/youtube\.com\/channel\/(UC[a-zA-Z0-9_-]{22})/);
+      if (idMatch) {
+        return { ok: true, type: "id", value: idMatch[1] };
+      }
+
+      if (/youtube\.com\/(c|user)\//.test(trimmed)) {
+        return {
+          ok: false,
+          message: "이 채널의 @핸들 URL을 찾을 수 없습니다. 유튜브에서 채널 홈 → 공유 → 링크 복사로 @핸들 주소를 가져와주세요."
+        };
+      }
+
+      return {
+        ok: false,
+        message: "올바른 채널 URL 또는 @핸들을 입력해주세요. 예: https://youtube.com/@samsungcareers"
+      };
+    }
+
+    function isDuplicate(parsed) {
+      return channels.some(function (ch) {
+        return ch.type === parsed.type && ch.value.toLowerCase() === parsed.value.toLowerCase();
+      });
+    }
+
+    /* ══════════ 렌더링 ══════════ */
+    var channelListEl = document.getElementById("channelList");
+    var channelEmptyHint = document.getElementById("channelEmptyHint");
+    var registeredCountEl = document.getElementById("registeredChannelCount");
+
+    function displayName(channel) {
+      return channel.channelTitle || (channel.type === "handle" ? "@" + channel.value : channel.value);
+    }
+
+    function render() {
+      channelListEl.innerHTML = "";
+      channelEmptyHint.style.display = channels.length === 0 ? "block" : "none";
+
+      channels.forEach(function (channel) {
+        var li = document.createElement("li");
+
+        var nameSpan = document.createElement("div");
+        var nameEl = document.createElement("span");
+        nameEl.className = "channel-name";
+        nameEl.textContent = displayName(channel);
+        nameSpan.appendChild(nameEl);
+
+        var subEl = document.createElement("span");
+        subEl.className = "channel-sub";
+        subEl.textContent = channel.subscriberCount != null
+          ? "구독자 " + channel.subscriberCount.toLocaleString() + "명"
+          : "정보 확인 전 · 새로고침하면 채워집니다";
+        nameSpan.appendChild(subEl);
+
+        if (channel.lastError) {
+          var errSpan = document.createElement("span");
+          errSpan.className = "channel-error-text";
+          errSpan.textContent = channel.lastError;
+          nameSpan.appendChild(errSpan);
+        }
+
+        var deleteBtn = document.createElement("button");
+        deleteBtn.type = "button";
+        deleteBtn.className = "btn-danger-text";
+        deleteBtn.textContent = "삭제";
+        deleteBtn.addEventListener("click", function () {
+          deleteChannel(channel.id);
+        });
+
+        li.appendChild(nameSpan);
+        li.appendChild(deleteBtn);
+        channelListEl.appendChild(li);
+      });
+
+      registeredCountEl.textContent = "등록된 채널 " + channels.length + "개";
+
+      var refreshBtn = document.getElementById("refreshBtn");
+      var exportBtn = document.getElementById("exportBtn");
+      refreshBtn.disabled = channels.length === 0;
+      // 엑셀 내보내기는 채널 등록 여부가 아니라, 내보낼 결과가 실제로 있는지로 판단한다(5단계).
+      exportBtn.disabled = lastResultRows.length === 0;
+
+      // 채널이 0개면 항상 빈 상태를 강제로 보여준다 (§6-1).
+      if (channels.length === 0) {
+        showState("stateEmpty");
+      }
+    }
+
+    /* ══════════ 채널 추가 ══════════ */
+    var form = document.getElementById("addChannelForm");
+    var input = document.getElementById("channelInput");
+    var errorEl = document.getElementById("channelInputError");
+
+    function showInputError(message) {
+      errorEl.textContent = message;
+      errorEl.classList.add("is-active");
+    }
+
+    function clearInputError() {
+      errorEl.textContent = "";
+      errorEl.classList.remove("is-active");
+    }
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      clearInputError();
+
+      var parsed = parseChannelInput(input.value);
+      if (!parsed.ok) {
+        showInputError(parsed.message);
+        return;
+      }
+      if (isDuplicate(parsed)) {
+        showInputError("이미 등록된 채널입니다.");
+        return;
+      }
+
+      channels.push({
+        id: "local_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8),
+        type: parsed.type,
+        value: parsed.value,
+        channelTitle: null,
+        subscriberCount: null,
+        lastError: null,
+        addedAt: new Date().toISOString()
+      });
+      saveChannels(channels);
+      render();
+
+      input.value = "";
+      input.focus();
+    });
+
+    /* ══════════ 채널 삭제 + 5초 실행취소 (§1-2b: Undo > Confirm) ══════════ */
+    var undoToast = document.getElementById("undoToast");
+    var undoToastBtn = document.getElementById("undoToastBtn");
+    var pendingDelete = null; // { channel, index, timerId }
+
+    function deleteChannel(channelId) {
+      var index = channels.findIndex(function (ch) { return ch.id === channelId; });
+      if (index === -1) return;
+
+      var removed = channels.splice(index, 1)[0];
+      saveChannels(channels);
+      render();
+
+      if (pendingDelete) {
+        clearTimeout(pendingDelete.timerId);
+      }
+      pendingDelete = {
+        channel: removed,
+        index: index,
+        timerId: setTimeout(function () {
+          undoToast.classList.remove("is-visible");
+          pendingDelete = null;
+        }, 5000)
+      };
+      undoToast.classList.add("is-visible");
+    }
+
+    undoToastBtn.addEventListener("click", function () {
+      if (!pendingDelete) return;
+      clearTimeout(pendingDelete.timerId);
+      channels.splice(pendingDelete.index, 0, pendingDelete.channel);
+      saveChannels(channels);
+      render();
+      undoToast.classList.remove("is-visible");
+      pendingDelete = null;
+    });
+
+    /* ══════════ N(비교 개수) 설정 ══════════ */
+    var nInput = document.getElementById("nSetting");
+    nInput.value = settings.n;
+    nInput.addEventListener("change", function () {
+      var value = parseInt(nInput.value, 10);
+      if (isNaN(value)) value = 10;
+      value = Math.min(20, Math.max(5, value));
+      nInput.value = value;
+      settings.n = value;
+      saveSettings(settings);
+    });
+
+    /* ══════════ 3단계: 유튜브 API 연동 ══════════ */
+    // 팀원들과 URL을 공유하므로, 코드 안에 공용 키를 심어두지 않는다.
+    // 각자 본인의 무료 API 키를 한 번 입력하면 settings.userApiKey에(=이 브라우저에만) 저장된다.
+    var SNAPSHOT_KEY = "yt_compare_snapshot_v1";
+
+    function saveSnapshot(rows) {
+      localStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ savedAt: new Date().toISOString(), rows: rows }));
+    }
+
+    function loadSnapshot() {
+      try {
+        var raw = localStorage.getItem(SNAPSHOT_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // 저번 스냅샷과 이번 결과를 영상 ID로 매칭해 증가치·신규 여부를 계산한다.
+    // 저번 스냅샷 자체가 없으면(첫 새로고침) 비교 기준이 없으므로 모두 비워둔다(§4단계 설계 확인).
+    function applyComparison(rows, previousSnapshot) {
+      var previousMap = null;
+      if (previousSnapshot && previousSnapshot.rows) {
+        previousMap = {};
+        previousSnapshot.rows.forEach(function (r) { previousMap[r.videoId] = r; });
+      }
+
+      rows.forEach(function (row) {
+        if (!previousMap) {
+          row.isNew = false;
+          row.viewDelta = null;
+          row.likeDelta = null;
+          row.commentDelta = null;
+          return;
+        }
+        var prev = previousMap[row.videoId];
+        if (!prev) {
+          row.isNew = true;
+          row.viewDelta = null;
+          row.likeDelta = null;
+          row.commentDelta = null;
+        } else {
+          row.isNew = false;
+          row.viewDelta = (row.viewCount != null && prev.viewCount != null) ? row.viewCount - prev.viewCount : null;
+          row.likeDelta = (row.likeCount != null && prev.likeCount != null) ? row.likeCount - prev.likeCount : null;
+          row.commentDelta = (row.commentCount != null && prev.commentCount != null) ? row.commentCount - prev.commentCount : null;
+        }
+      });
+
+      return previousMap ? rows.filter(function (r) { return r.isNew; }) : [];
+    }
+
+    // fetch 실패/유튜브 API 오류를 한 곳에서 처리해 { type, message } 형태로 통일한다.
+    // type이 "notFound"면 그 채널만의 문제(건너뛰기), 그 외(quota/invalidKey/network)는 전체 중단 대상이다.
+    async function fetchJson(url) {
+      var res;
+      try {
+        res = await fetch(url);
+      } catch (networkErr) {
+        var netErr = new Error("네트워크 연결을 확인하고 다시 시도해주세요.");
+        netErr.type = "network";
+        throw netErr;
+      }
+      if (!res.ok) {
+        var body = null;
+        try { body = await res.json(); } catch (parseErr) { /* 본문이 JSON이 아닐 수 있음 */ }
+        var reason = body && body.error && body.error.errors && body.error.errors[0] && body.error.errors[0].reason;
+        var err = new Error((body && body.error && body.error.message) || "유튜브 API 요청에 실패했습니다.");
+        if (reason === "quotaExceeded" || reason === "dailyLimitExceeded") {
+          err.type = "quota";
+          err.message = "오늘 이 API 키의 무료 사용량이 초과되었습니다. 다른 키를 입력하면 계속 이용할 수 있어요.";
+        } else if (res.status === 400 || res.status === 401 || reason === "keyInvalid" || reason === "badRequest") {
+          err.type = "invalidKey";
+          err.message = "API 키가 올바르지 않습니다. 키를 다시 확인해서 입력해주세요.";
+        } else if (res.status === 404) {
+          err.type = "notFound";
+          err.message = "채널을 찾을 수 없습니다. 주소를 다시 확인해주세요.";
+        } else {
+          err.type = "other";
+        }
+        throw err;
+      }
+      return res.json();
+    }
+
+    async function fetchChannelInfo(channel, apiKey) {
+      var params = new URLSearchParams({ part: "snippet,statistics,contentDetails", key: apiKey });
+      if (channel.type === "id") {
+        params.set("id", channel.value);
+      } else {
+        params.set("forHandle", "@" + channel.value);
+      }
+      var data = await fetchJson("https://www.googleapis.com/youtube/v3/channels?" + params.toString());
+      var item = data.items && data.items[0];
+      if (!item) {
+        var notFoundErr = new Error("채널을 찾을 수 없습니다. 주소를 다시 확인해주세요.");
+        notFoundErr.type = "notFound";
+        throw notFoundErr;
+      }
+      return {
+        channelTitle: item.snippet.title,
+        subscriberCount: item.statistics.hiddenSubscriberCount ? null : parseInt(item.statistics.subscriberCount, 10),
+        uploadsPlaylistId: item.contentDetails.relatedPlaylists.uploads
+      };
+    }
+
+    async function fetchRecentVideoIds(uploadsPlaylistId, n, apiKey) {
+      var params = new URLSearchParams({
+        part: "contentDetails",
+        playlistId: uploadsPlaylistId,
+        maxResults: String(n),
+        key: apiKey
+      });
+      var data = await fetchJson("https://www.googleapis.com/youtube/v3/playlistItems?" + params.toString());
+      return (data.items || []).map(function (item) { return item.contentDetails.videoId; });
+    }
+
+    // 유튜브는 영상 길이를 "PT1M3S"(1분 3초) 같은 ISO 8601 형식으로 준다. 초 단위 숫자로 바꿔준다.
+    function parseDurationToSeconds(iso8601Duration) {
+      var match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(iso8601Duration || "");
+      if (!match) return null;
+      var hours = parseInt(match[1] || "0", 10);
+      var minutes = parseInt(match[2] || "0", 10);
+      var seconds = parseInt(match[3] || "0", 10);
+      return hours * 3600 + minutes * 60 + seconds;
+    }
+
+    async function fetchVideoStats(videoIds, apiKey) {
+      if (videoIds.length === 0) return [];
+      var params = new URLSearchParams({ part: "snippet,statistics,contentDetails", id: videoIds.join(","), key: apiKey });
+      var data = await fetchJson("https://www.googleapis.com/youtube/v3/videos?" + params.toString());
+      return (data.items || []).map(function (item) {
+        var durationSeconds = parseDurationToSeconds(item.contentDetails.duration);
+        return {
+          videoId: item.id,
+          title: item.snippet.title,
+          publishedAt: item.snippet.publishedAt,
+          viewCount: item.statistics.viewCount != null ? parseInt(item.statistics.viewCount, 10) : null,
+          likeCount: item.statistics.likeCount != null ? parseInt(item.statistics.likeCount, 10) : null,
+          commentCount: item.statistics.commentCount != null ? parseInt(item.statistics.commentCount, 10) : null,
+          videoFormat: durationSeconds == null ? "-" : (durationSeconds <= 60 ? "쇼츠" : "롱폼")
+        };
+      });
+    }
+
+    function formatDate(iso) {
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      return d.toISOString().slice(0, 10);
+    }
+
+    function formatDelta(delta) {
+      if (delta == null) return "-";
+      return (delta > 0 ? "+" : "") + delta.toLocaleString();
+    }
+
+    function renderResultsTable(rows) {
+      rows.sort(function (a, b) { return new Date(b.publishedAt) - new Date(a.publishedAt); });
+      var tbody = document.getElementById("resultTableBody");
+      tbody.innerHTML = "";
+
+      rows.forEach(function (row) {
+        var tr = document.createElement("tr");
+
+        function addCell(text, isUp) {
+          var td = document.createElement("td");
+          td.textContent = text;
+          if (isUp) td.classList.add("delta-up");
+          tr.appendChild(td);
+        }
+
+        addCell(row.channelName);
+        addCell(row.title);
+        addCell(formatDate(row.publishedAt));
+        addCell(row.videoFormat);
+        addCell(row.viewCount != null ? row.viewCount.toLocaleString() : "-");
+        addCell(formatDelta(row.viewDelta), row.viewDelta > 0);
+        addCell(row.likeCount != null ? row.likeCount.toLocaleString() : "-");
+        addCell(formatDelta(row.likeDelta), row.likeDelta > 0);
+        addCell(row.commentCount != null ? row.commentCount.toLocaleString() : "-");
+        addCell(formatDelta(row.commentDelta), row.commentDelta > 0);
+
+        var newTd = document.createElement("td");
+        if (row.isNew) {
+          var badge = document.createElement("span");
+          badge.className = "new-badge";
+          badge.textContent = "NEW";
+          newTd.appendChild(badge);
+        }
+        tr.appendChild(newTd);
+
+        var linkTd = document.createElement("td");
+        var linkEl = document.createElement("a");
+        linkEl.href = "https://www.youtube.com/watch?v=" + row.videoId;
+        linkEl.target = "_blank";
+        linkEl.rel = "noopener";
+        linkEl.textContent = "보기";
+        linkTd.appendChild(linkEl);
+        tr.appendChild(linkTd);
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderNewSummary(newVideos) {
+      var newSummaryTitle = document.getElementById("newSummaryTitle");
+      var newSummaryList = document.getElementById("newSummaryList");
+      if (newVideos.length === 0) {
+        newSummarySection.style.display = "none";
+        return;
+      }
+      newSummarySection.style.display = "";
+      newSummaryTitle.textContent = "이번에 새로 올라온 영상 " + newVideos.length + "건";
+      newSummaryList.innerHTML = "";
+      newVideos.forEach(function (v) {
+        var li = document.createElement("li");
+        li.textContent = v.channelName + " — " + v.title;
+        newSummaryList.appendChild(li);
+      });
+    }
+
+    /* ══════════ 결과 표 필터 (채널/영상 제목/구분) ══════════ */
+    var filterChannelEl = document.getElementById("filterChannel");
+    var filterTitleEl = document.getElementById("filterTitle");
+    var filterFormatEl = document.getElementById("filterFormat");
+    var filterState = { channel: "", title: "", format: "" };
+
+    function getFilteredRows() {
+      var titleQuery = filterState.title.trim().toLowerCase();
+      return lastResultRows.filter(function (row) {
+        if (filterState.channel && row.channelName !== filterState.channel) return false;
+        if (filterState.format && row.videoFormat !== filterState.format) return false;
+        if (titleQuery && row.title.toLowerCase().indexOf(titleQuery) === -1) return false;
+        return true;
+      });
+    }
+
+    function applyFilters() {
+      renderResultsTable(getFilteredRows());
+    }
+
+    // 채널 드롭다운은 새로고침 때마다 실제 결과에 있는 채널명으로 다시 채운다.
+    function populateChannelFilterOptions(rows) {
+      var seen = {};
+      var names = [];
+      rows.forEach(function (row) {
+        if (!seen[row.channelName]) {
+          seen[row.channelName] = true;
+          names.push(row.channelName);
+        }
+      });
+      names.sort();
+
+      var previousValue = filterChannelEl.value;
+      filterChannelEl.innerHTML = "";
+      var allOption = document.createElement("option");
+      allOption.value = "";
+      allOption.textContent = "전체 채널";
+      filterChannelEl.appendChild(allOption);
+      names.forEach(function (name) {
+        var opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        filterChannelEl.appendChild(opt);
+      });
+
+      filterChannelEl.value = names.indexOf(previousValue) !== -1 ? previousValue : "";
+      filterState.channel = filterChannelEl.value;
+    }
+
+    filterChannelEl.addEventListener("change", function () {
+      filterState.channel = filterChannelEl.value;
+      applyFilters();
+    });
+    filterFormatEl.addEventListener("change", function () {
+      filterState.format = filterFormatEl.value;
+      applyFilters();
+    });
+    filterTitleEl.addEventListener("input", function () {
+      filterState.title = filterTitleEl.value;
+      applyFilters();
+    });
+
+    var errorMessageText = document.getElementById("errorMessageText");
+    var apiKeyForm = document.getElementById("apiKeyForm");
+    var apiKeyInput = document.getElementById("apiKeyInput");
+    var retryBtn = document.getElementById("retryBtn");
+    var newSummarySection = document.getElementById("newSummarySection");
+    var refreshBtn = document.getElementById("refreshBtn");
+    var lastUpdatedText = document.getElementById("lastUpdatedText");
+    var loadingProgressText = document.getElementById("loadingProgressText");
+    var progressFill = document.getElementById("progressFill");
+
+    function showApiError(err) {
+      errorMessageText.textContent = err.message || "유튜브 API 요청 중 문제가 발생했습니다.";
+      var needsKeyInput = err.type === "noKey" || err.type === "quota" || err.type === "invalidKey";
+      apiKeyForm.style.display = needsKeyInput ? "" : "none";
+      retryBtn.style.display = needsKeyInput ? "none" : "";
+      showState("stateError");
+    }
+
+    async function refreshAll() {
+      var apiKey = settings.userApiKey;
+      if (!apiKey) {
+        var noKeyErr = new Error("새로고침을 하려면 본인의 유튜브 API 키를 먼저 입력해주세요.");
+        noKeyErr.type = "noKey";
+        showApiError(noKeyErr);
+        return;
+      }
+
+      refreshBtn.disabled = true;
+      document.getElementById("exportBtn").disabled = true;
+      showState("stateLoading");
+
+      var total = channels.length;
+      var processed = 0;
+      var resultRows = [];
+      var globalError = null;
+
+      loadingProgressText.textContent = "0 / " + total + " 채널 처리 중";
+      progressFill.style.width = "0%";
+
+      for (var i = 0; i < channels.length; i++) {
+        var channel = channels[i];
+        try {
+          var info = await fetchChannelInfo(channel, apiKey);
+          channel.channelTitle = info.channelTitle;
+          channel.subscriberCount = info.subscriberCount;
+          channel.lastError = null;
+
+          var videoIds = await fetchRecentVideoIds(info.uploadsPlaylistId, settings.n, apiKey);
+          var stats = await fetchVideoStats(videoIds, apiKey);
+          stats.forEach(function (stat) {
+            resultRows.push(Object.assign({ channelName: info.channelTitle }, stat));
+          });
+        } catch (err) {
+          if (err.type === "quota" || err.type === "invalidKey" || err.type === "network") {
+            globalError = err;
+            break;
+          }
+          channel.lastError = err.message || "채널을 찾을 수 없습니다.";
+        }
+
+        processed++;
+        loadingProgressText.textContent = processed + " / " + total + " 채널 처리 중";
+        progressFill.style.width = Math.round((processed / total) * 100) + "%";
+      }
+
+      saveChannels(channels);
+      render();
+
+      if (globalError) {
+        showApiError(globalError);
+        return;
+      }
+
+      if (resultRows.length === 0) {
+        var emptyErr = new Error("등록된 채널에서 영상을 하나도 가져오지 못했습니다. 채널 주소를 확인해주세요.");
+        emptyErr.type = "other";
+        showApiError(emptyErr);
+        return;
+      }
+
+      var previousSnapshot = loadSnapshot();
+      var newVideos = applyComparison(resultRows, previousSnapshot);
+
+      lastResultRows = resultRows;
+      populateChannelFilterOptions(resultRows);
+      renderResultsTable(getFilteredRows());
+      renderNewSummary(newVideos);
+      saveSnapshot(resultRows);
+      document.getElementById("exportBtn").disabled = false;
+      lastUpdatedText.textContent = new Date().toLocaleString("ko-KR");
+      showState("stateSuccess");
+    }
+
+    refreshBtn.addEventListener("click", refreshAll);
+    retryBtn.addEventListener("click", refreshAll);
+
+    document.getElementById("saveApiKeyBtn").addEventListener("click", function () {
+      var value = apiKeyInput.value.trim();
+      if (!value) return;
+      settings.userApiKey = value;
+      saveSettings(settings);
+      apiKeyInput.value = "";
+      refreshAll();
+    });
+
+    /* ══════════ 5단계: 엑셀(.xlsx) 내보내기 ══════════ */
+    // 화면 "비교 결과" 표에 보이는 내용(현재 필터가 적용된 상태)을 그대로 엑셀 한 장으로 내보낸다.
+    var RESULT_HEADERS = [
+      "채널명", "영상 제목", "업로드일", "구분", "조회수", "조회수 증가",
+      "좋아요", "좋아요 증가", "댓글수", "댓글 증가", "신규", "영상 링크"
+    ];
+
+    function buildExportRows() {
+      var sorted = getFilteredRows().sort(function (a, b) {
+        return new Date(b.publishedAt) - new Date(a.publishedAt);
+      });
+      var body = sorted.map(function (row) {
+        return [
+          row.channelName,
+          row.title,
+          formatDate(row.publishedAt),
+          row.videoFormat,
+          row.viewCount != null ? row.viewCount : "-",
+          formatDelta(row.viewDelta),
+          row.likeCount != null ? row.likeCount : "-",
+          formatDelta(row.likeDelta),
+          row.commentCount != null ? row.commentCount : "-",
+          formatDelta(row.commentDelta),
+          row.isNew ? "NEW" : "",
+          "https://www.youtube.com/watch?v=" + row.videoId
+        ];
+      });
+      return [RESULT_HEADERS].concat(body);
+    }
+
+    document.getElementById("exportBtn").addEventListener("click", function () {
+      if (lastResultRows.length === 0) return;
+
+      var sheet = XLSX.utils.aoa_to_sheet(buildExportRows());
+      var workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, sheet, "비교 결과");
+
+      var todayStr = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(workbook, "유튜브채용채널비교_" + todayStr + ".xlsx");
+    });
+
+    /* ══════════ 초기 렌더 ══════════ */
+    render();
+  })();
+</script>
+</body>
+</html>
