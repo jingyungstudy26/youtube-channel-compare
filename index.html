@@ -1358,14 +1358,20 @@
       "좋아요", "좋아요 증가", "댓글수", "댓글 증가", "신규", "영상 링크"
     ];
 
+    // 유튜브 API가 한글을 자모 분리(NFD) 형태로 내려줄 때가 있어 엑셀에서 깨져 보인다.
+    // 완성형(NFC)으로 통일해서 엑셀에 써준다.
+    function toNFC(value) {
+      return typeof value === "string" ? value.normalize("NFC") : value;
+    }
+
     function buildExportRows() {
       var sorted = getFilteredRows().sort(function (a, b) {
         return new Date(b.publishedAt) - new Date(a.publishedAt);
       });
       var body = sorted.map(function (row) {
         return [
-          row.channelName,
-          row.title,
+          toNFC(row.channelName),
+          toNFC(row.title),
           formatDate(row.publishedAt),
           row.videoFormat,
           row.viewCount != null ? row.viewCount : "-",
