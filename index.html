@@ -1352,11 +1352,26 @@
     });
 
     /* ══════════ 5단계: 엑셀(.xlsx) 내보내기 ══════════ */
-    // 화면 "비교 결과" 표에 보이는 내용(현재 필터가 적용된 상태)을 그대로 엑셀 한 장으로 내보낸다.
+    // 화면 "비교 결과" 표에 보이는 내용(현재 필터가 적용된 상태)을,
+    // 매일 자동 수집되는 히스토리 데이터와 같은 정규화 포맷(9개 컬럼)으로 내보낸다.
     var RESULT_HEADERS = [
-      "채널명", "영상 제목", "업로드일", "구분", "조회수", "조회수 증가",
-      "좋아요", "좋아요 증가", "댓글수", "댓글 증가", "신규", "영상 링크"
+      "기준일", "다운로드 시간", "Channel", "Content", "Type", "VIDEO_ID", "Views", "Likes", "Comments"
     ];
+
+    // "롱폼"/"쇼츠"(화면 표시용 한글)를 히스토리 데이터와 같은 영문 Type 값으로 바꾼다.
+    function toExportType(videoFormat) {
+      if (videoFormat === "롱폼") return "Longform";
+      if (videoFormat === "쇼츠") return "Shorts";
+      return "-";
+    }
+
+    // 오늘 날짜/시각을 "기준일"(YYYY-MM-DD), "다운로드 시간"(H:MM) 형식으로 만든다.
+    function formatExportDate(date) {
+      return date.toISOString().slice(0, 10);
+    }
+    function formatExportTime(date) {
+      return date.getHours() + ":" + String(date.getMinutes()).padStart(2, "0");
+    }
 
     // 유튜브 API가 한글을 두 가지 방식으로 깨진 채 내려줄 때가 있어 엑셀에서 깨져 보인다.
     // 1) 합쳐진 글자를 풀어쓴 형태(NFD) → normalize("NFC")로 복원
@@ -1395,23 +1410,24 @@
     }
 
     function buildExportRows() {
+      var now = new Date();
+      var baseDate = formatExportDate(now);
+      var downloadTime = formatExportTime(now);
+
       var sorted = getFilteredRows().sort(function (a, b) {
         return new Date(b.publishedAt) - new Date(a.publishedAt);
       });
       var body = sorted.map(function (row) {
         return [
+          baseDate,
+          downloadTime,
           toNFC(row.channelName),
           toNFC(row.title),
-          formatDate(row.publishedAt),
-          row.videoFormat,
+          toExportType(row.videoFormat),
+          row.videoId,
           row.viewCount != null ? row.viewCount : "-",
-          formatDelta(row.viewDelta),
           row.likeCount != null ? row.likeCount : "-",
-          formatDelta(row.likeDelta),
-          row.commentCount != null ? row.commentCount : "-",
-          formatDelta(row.commentDelta),
-          row.isNew ? "NEW" : "",
-          "https://www.youtube.com/watch?v=" + row.videoId
+          row.commentCount != null ? row.commentCount : "-"
         ];
       });
       return [RESULT_HEADERS].concat(body);
