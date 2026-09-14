@@ -514,6 +514,9 @@
       <button type="button" id="tabBtnCompare" aria-controls="tabPanelCompare" aria-current="false">
         <span class="icon" aria-hidden="true">📊</span> 비교 결과
       </button>
+      <button type="button" id="tabBtnHistory" aria-controls="tabPanelHistory" aria-current="false">
+        <span class="icon" aria-hidden="true">📈</span> 히스토리
+      </button>
     </div>
   </nav>
 
@@ -652,6 +655,69 @@
 
     </section>
 
+    <!-- ══════════ 히스토리 (자동 수집된 누적 데이터 조회 과업) ══════════ -->
+    <section class="tab-panel" id="tabPanelHistory" aria-labelledby="tabBtnHistory">
+
+      <!-- 상태 패널: 불러오는 중 -->
+      <section class="state-panel" id="historyStateLoading" aria-live="polite">
+        <h2>히스토리 불러오는 중...</h2>
+      </section>
+
+      <!-- 상태 패널: 아직 자동 수집된 데이터가 없음 (에러 아님) -->
+      <section class="state-panel" id="historyStateEmpty" aria-live="polite">
+        <h2>아직 자동 수집된 히스토리가 없어요</h2>
+        <p>매일 오전 9시(한국시간)에 자동으로 데이터가 쌓여요. 첫 수집이 끝난 뒤 다시 열어봐 주세요.</p>
+      </section>
+
+      <!-- 상태 패널: 성공 (그래프 + 원본 표) -->
+      <section class="state-panel" id="historyStateSuccess">
+
+        <section class="card" id="historyChartCard" aria-labelledby="historyChartTitle">
+          <h2 id="historyChartTitle">채널별 조회수 추이</h2>
+          <div id="historyChartContainer"></div>
+        </section>
+
+        <section class="card" aria-labelledby="historyTableTitle">
+          <h2 id="historyTableTitle">날짜별 히스토리</h2>
+
+          <div class="result-filter-row">
+            <label for="historyFilterStart">시작일
+              <input type="date" id="historyFilterStart" />
+            </label>
+            <label for="historyFilterEnd">종료일
+              <input type="date" id="historyFilterEnd" />
+            </label>
+            <label for="historyFilterChannel">채널
+              <select id="historyFilterChannel"><option value="">전체 채널</option></select>
+            </label>
+          </div>
+
+          <p class="channel-empty-hint" id="historyTableEmptyHint" style="display:none;">조건에 맞는 데이터가 없어요. 날짜 범위나 채널을 넓혀보세요.</p>
+
+          <div class="table-scroll">
+            <table class="result-table" id="historyTable">
+              <thead>
+                <tr>
+                  <th>기준일</th>
+                  <th>채널</th>
+                  <th>영상 제목</th>
+                  <th>구분</th>
+                  <th>조회수</th>
+                  <th>좋아요</th>
+                  <th>댓글수</th>
+                  <th>업로드일</th>
+                  <th>영상 링크</th>
+                </tr>
+              </thead>
+              <tbody id="historyTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+      </section>
+
+    </section>
+
   </div>
 </div>
 
@@ -667,7 +733,8 @@
     /* ══════════ 사이드바 내비게이션 ══════════ */
     var tabs = [
       { btn: "tabBtnChannel", panel: "tabPanelChannel", title: "채널 관리" },
-      { btn: "tabBtnCompare", panel: "tabPanelCompare", title: "비교 결과" }
+      { btn: "tabBtnCompare", panel: "tabPanelCompare", title: "비교 결과" },
+      { btn: "tabBtnHistory", panel: "tabPanelHistory", title: "히스토리" }
     ];
     var pageTitleEl = document.getElementById("pageTitle");
 
@@ -1445,8 +1512,208 @@
       XLSX.writeFile(workbook, "유튜브채용채널비교_" + todayStr + ".xlsx");
     });
 
+    /* ══════════ 히스토리 (매일 자동 수집된 data/history.csv 조회) ══════════ */
+    // collect.js가 만드는 CSV 컬럼 순서와 반드시 일치해야 한다: 기준일,다운로드 시간,Channel,Content,Type,VIDEO_ID,Views,Likes,Comments,업로드일
+    var HISTORY_CSV_PATH = "data/history.csv";
+    var HISTORY_PRIORITY_CHANNEL = "CJ Careers"; // CJ 담당자 관점에서 그래프 맨 앞 + 강조 표시 (설계 확정)
+    var historyRows = []; // 파싱된 전체 히스토리 원본 행
+
+    var historyStatePanels = ["historyStateLoading", "historyStateEmpty", "historyStateSuccess"];
+    function showHistoryState(stateId) {
+      historyStatePanels.forEach(function (id) {
+        document.getElementById(id).classList.toggle("is-active", id === stateId);
+      });
+    }
+
+    // 쉼표/줄바꿈/큰따옴표가 셀 안에 있어도 정확히 나누는 최소 CSV 파서.
+    // collect.js의 csvCell()이 만든 규격(큰따옴표로 감싸고 내부 "는 ""로 이스케이프)과 짝을 이룬다.
+    function parseCsv(text) {
+      var rows = [];
+      var row = [];
+      var field = "";
+      var inQuotes = false;
+
+      for (var i = 0; i < text.length; i++) {
+        var c = text[i];
+        if (inQuotes) {
+          if (c === '"') {
+            if (text[i + 1] === '"') { field += '"'; i++; }
+            else { inQuotes = false; }
+          } else {
+            field += c;
+          }
+        } else if (c === '"') {
+          inQuotes = true;
+        } else if (c === ",") {
+          row.push(field);
+          field = "";
+        } else if (c === "\n" || c === "\r") {
+          if (c === "\r" && text[i + 1] === "\n") i++;
+          row.push(field);
+          field = "";
+          if (row.length > 1 || row[0] !== "") rows.push(row);
+          row = [];
+        } else {
+          field += c;
+        }
+      }
+      if (field !== "" || row.length > 0) {
+        row.push(field);
+        if (row.length > 1 || row[0] !== "") rows.push(row);
+      }
+      return rows;
+    }
+
+    function toIntOrNull(value) {
+      if (value == null || value === "" || value === "-") return null;
+      var n = parseInt(value, 10);
+      return isNaN(n) ? null : n;
+    }
+
+    function parseHistoryCsvText(text) {
+      var table = parseCsv(text);
+      if (table.length <= 1) return []; // 헤더만 있거나 완전히 빈 파일
+
+      return table.slice(1).map(function (cols) {
+        return {
+          baseDate: cols[0] || "",
+          downloadTime: cols[1] || "",
+          channelName: cols[2] || "",
+          title: cols[3] || "",
+          videoFormat: cols[4] === "Longform" ? "롱폼" : (cols[4] === "Shorts" ? "쇼츠" : "-"),
+          videoId: cols[5] || "",
+          viewCount: toIntOrNull(cols[6]),
+          likeCount: toIntOrNull(cols[7]),
+          commentCount: toIntOrNull(cols[8]),
+          publishedAt: cols[9] || ""
+        };
+      }).filter(function (row) { return row.baseDate && row.channelName; });
+    }
+
+    /* ── 히스토리 표 필터 (날짜 범위 + 채널) ── */
+    var historyFilterStartEl = document.getElementById("historyFilterStart");
+    var historyFilterEndEl = document.getElementById("historyFilterEnd");
+    var historyFilterChannelEl = document.getElementById("historyFilterChannel");
+    var historyTableEmptyHint = document.getElementById("historyTableEmptyHint");
+
+    function getFilteredHistoryRows() {
+      var start = historyFilterStartEl.value; // "" 이면 전체 기간 (설계 확정: 기본값 = 전체)
+      var end = historyFilterEndEl.value;
+      var channel = historyFilterChannelEl.value;
+
+      return historyRows.filter(function (row) {
+        if (start && row.baseDate < start) return false;
+        if (end && row.baseDate > end) return false;
+        if (channel && row.channelName !== channel) return false;
+        return true;
+      });
+    }
+
+    function renderHistoryTable() {
+      var rows = getFilteredHistoryRows().slice().sort(function (a, b) {
+        if (a.baseDate !== b.baseDate) return a.baseDate < b.baseDate ? 1 : -1;
+        return a.channelName.localeCompare(b.channelName);
+      });
+
+      var tbody = document.getElementById("historyTableBody");
+      tbody.innerHTML = "";
+      historyTableEmptyHint.style.display = rows.length === 0 ? "block" : "none";
+
+      rows.forEach(function (row) {
+        var tr = document.createElement("tr");
+
+        function addCell(text) {
+          var td = document.createElement("td");
+          td.textContent = text;
+          tr.appendChild(td);
+        }
+
+        addCell(row.baseDate);
+        addCell(row.channelName);
+        addCell(row.title);
+        addCell(row.videoFormat);
+        addCell(row.viewCount != null ? row.viewCount.toLocaleString() : "-");
+        addCell(row.likeCount != null ? row.likeCount.toLocaleString() : "-");
+        addCell(row.commentCount != null ? row.commentCount.toLocaleString() : "-");
+        addCell(row.publishedAt);
+
+        var linkTd = document.createElement("td");
+        if (row.videoId) {
+          var linkEl = document.createElement("a");
+          linkEl.href = "https://www.youtube.com/watch?v=" + row.videoId;
+          linkEl.target = "_blank";
+          linkEl.rel = "noopener";
+          linkEl.textContent = "보기";
+          linkTd.appendChild(linkEl);
+        }
+        tr.appendChild(linkTd);
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    // 채널 드롭다운을 실제 히스토리에 등장하는 채널명으로 채운다. CJ를 맨 위로 올린다(§1-2a: 인기/우선순위순).
+    function populateHistoryChannelOptions() {
+      var seen = {};
+      var names = [];
+      historyRows.forEach(function (row) {
+        if (!seen[row.channelName]) {
+          seen[row.channelName] = true;
+          names.push(row.channelName);
+        }
+      });
+      names.sort();
+      var priorityIndex = names.indexOf(HISTORY_PRIORITY_CHANNEL);
+      if (priorityIndex > 0) {
+        names.splice(priorityIndex, 1);
+        names.unshift(HISTORY_PRIORITY_CHANNEL);
+      }
+
+      historyFilterChannelEl.innerHTML = "";
+      var allOption = document.createElement("option");
+      allOption.value = "";
+      allOption.textContent = "전체 채널";
+      historyFilterChannelEl.appendChild(allOption);
+      names.forEach(function (name) {
+        var opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        historyFilterChannelEl.appendChild(opt);
+      });
+    }
+
+    historyFilterStartEl.addEventListener("change", renderHistoryTable);
+    historyFilterEndEl.addEventListener("change", renderHistoryTable);
+    historyFilterChannelEl.addEventListener("change", renderHistoryTable);
+
+    async function loadHistory() {
+      showHistoryState("historyStateLoading");
+      try {
+        var res = await fetch(HISTORY_CSV_PATH);
+        if (!res.ok) {
+          // 파일이 아직 없는 것(404)도, 그 외 이유로 못 읽는 것도 "아직 데이터 없음"으로 안내한다(§9: 복구 불가 에러 금지).
+          showHistoryState("historyStateEmpty");
+          return;
+        }
+        var text = await res.text();
+        historyRows = parseHistoryCsvText(text);
+
+        if (historyRows.length === 0) {
+          showHistoryState("historyStateEmpty");
+          return;
+        }
+
+        populateHistoryChannelOptions();
+        renderHistoryTable();
+        showHistoryState("historyStateSuccess");
+      } catch (e) {
+        showHistoryState("historyStateEmpty");
+      }
+    }
+
     /* ══════════ 초기 렌더 ══════════ */
     render();
+    loadHistory();
   })();
 </script>
 </body>
