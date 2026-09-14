@@ -1,0 +1,34 @@
+name: 매일 유튜브 데이터 자동 수집
+
+on:
+  schedule:
+    # 매일 UTC 0시 = 한국시간(KST) 오전 9시. GitHub 서버 사정으로 몇 분 늦게 시작될 수 있다.
+    - cron: "0 0 * * *"
+  workflow_dispatch: {} # 저장소 Actions 탭에서 "Run workflow" 버튼으로 수동 테스트 실행 가능
+
+permissions:
+  contents: write # data/history.csv 커밋/푸시에 필요
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 유튜브 데이터 수집
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: node .github/scripts/collect.js
+
+      - name: data/history.csv 변경사항 커밋
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/history.csv
+          git diff --cached --quiet && echo "변경 없음, 커밋 생략" && exit 0
+          git commit -m "chore: 유튜브 데이터 자동 수집 ($(date -u +%Y-%m-%d))"
+          git push
