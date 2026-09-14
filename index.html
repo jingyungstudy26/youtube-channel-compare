@@ -381,6 +381,33 @@
     margin: 0 0 8px;
   }
 
+  /* ── 히스토리: 채널별 조회수 추이 그래프 ─────────────────────── */
+  #historyChartContainer svg { width: 100%; height: auto; display: block; }
+  .history-chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    margin-top: 14px;
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+  }
+  .history-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .history-legend-item.is-priority {
+    color: var(--color-text);
+    font-weight: 700;
+  }
+  .history-legend-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    display: inline-block;
+    flex: 0 0 auto;
+  }
+
   .state-error {
     background: var(--color-danger-bg);
     box-shadow: none;
@@ -1590,6 +1617,187 @@
       }).filter(function (row) { return row.baseDate && row.channelName; });
     }
 
+    /* ── 히스토리: 채널별 조회수 추이 그래프 ── */
+    // 그래프는 표의 날짜/채널 필터와 무관하게 항상 전체 히스토리 기준으로 그린다(추이 비교가 목적이라
+    // 표를 좁혀 봐도 그래프까지 같이 줄어들면 "왜 그래프가 방금 사라졌지?"라는 물음표가 생기기 때문).
+    var HISTORY_HIGHLIGHT_COLOR = "#2a78d6"; // CJ 전용 강조색 (categorical slot 1, blue)
+    var HISTORY_MUTED_COLOR = "#898781";     // 나머지 채널: 축/보조텍스트와 같은 무채색 톤으로 배경화
+    var CHART_WIDTH = 760;
+    var CHART_HEIGHT = 300;
+    var CHART_PADDING = { top: 16, right: 16, bottom: 36, left: 56 };
+
+    // 날짜별 × 채널별 조회수 합계를 계산한다. CJ를 배열 맨 앞으로 보내(§1-2a: 우선순위순),
+    // 범례에서도 CJ가 항상 먼저 보이게 한다.
+    function buildChannelViewSeries() {
+      var byDateChannel = {};
+      var dateSet = {};
+      var channelSet = {};
+
+      historyRows.forEach(function (row) {
+        if (row.viewCount == null) return;
+        dateSet[row.baseDate] = true;
+        channelSet[row.channelName] = true;
+        byDateChannel[row.baseDate] = byDateChannel[row.baseDate] || {};
+        byDateChannel[row.baseDate][row.channelName] =
+          (byDateChannel[row.baseDate][row.channelName] || 0) + row.viewCount;
+      });
+
+      var dates = Object.keys(dateSet).sort();
+      var channels = Object.keys(channelSet).sort();
+      var priorityIndex = channels.indexOf(HISTORY_PRIORITY_CHANNEL);
+      if (priorityIndex > 0) {
+        channels.splice(priorityIndex, 1);
+        channels.unshift(HISTORY_PRIORITY_CHANNEL);
+      }
+
+      var series = channels.map(function (channel) {
+        var points = dates.map(function (date) {
+          var value = byDateChannel[date] && byDateChannel[date][channel];
+          return value == null ? null : value;
+        });
+        return { channel: channel, points: points };
+      });
+
+      return { dates: dates, series: series };
+    }
+
+    function renderHistoryChart() {
+      var container = document.getElementById("historyChartContainer");
+      container.innerHTML = "";
+
+      var data = buildChannelViewSeries();
+      if (data.dates.length === 0) {
+        var msg = document.createElement("p");
+        msg.className = "channel-empty-hint";
+        msg.textContent = "그래프를 그릴 조회수 데이터가 아직 없어요.";
+        container.appendChild(msg);
+        return;
+      }
+
+      var innerWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
+      var innerHeight = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
+
+      var maxValue = 0;
+      data.series.forEach(function (s) {
+        s.points.forEach(function (v) { if (v != null && v > maxValue) maxValue = v; });
+      });
+      if (maxValue === 0) maxValue = 1;
+      maxValue *= 1.1; // 맨 위 점이 그래프 상단에 딱 붙지 않도록 여유를 둔다
+
+      var xStep = data.dates.length > 1 ? innerWidth / (data.dates.length - 1) : 0;
+      function xPos(i) { return CHART_PADDING.left + (data.dates.length > 1 ? i * xStep : innerWidth / 2); }
+      function yPos(v) { return CHART_PADDING.top + innerHeight - (v / maxValue) * innerHeight; }
+
+      var svgNS = "http://www.w3.org/2000/svg";
+      var svg = document.createElementNS(svgNS, "svg");
+      svg.setAttribute("viewBox", "0 0 " + CHART_WIDTH + " " + CHART_HEIGHT);
+      svg.setAttribute("role", "img");
+      svg.setAttribute("aria-label", "채널별 날짜별 조회수 합계 추이. CJ Careers는 파란색 굵은 선으로 강조.");
+
+      // 가로 눈금선 + y축 라벨 (4단계)
+      var GRID_STEPS = 4;
+      for (var g = 0; g <= GRID_STEPS; g++) {
+        var value = (maxValue / GRID_STEPS) * g;
+        var y = yPos(value);
+
+        var line = document.createElementNS(svgNS, "line");
+        line.setAttribute("x1", CHART_PADDING.left);
+        line.setAttribute("x2", CHART_WIDTH - CHART_PADDING.right);
+        line.setAttribute("y1", y);
+        line.setAttribute("y2", y);
+        line.setAttribute("stroke", "#e1e0d9");
+        line.setAttribute("stroke-width", "1");
+        svg.appendChild(line);
+
+        var yLabel = document.createElementNS(svgNS, "text");
+        yLabel.setAttribute("x", CHART_PADDING.left - 8);
+        yLabel.setAttribute("y", y + 4);
+        yLabel.setAttribute("text-anchor", "end");
+        yLabel.setAttribute("font-size", "10");
+        yLabel.setAttribute("fill", "#898781");
+        yLabel.textContent = Math.round(value).toLocaleString();
+        svg.appendChild(yLabel);
+      }
+
+      // x축 날짜 라벨 (MM-DD만 짧게 표시)
+      data.dates.forEach(function (date, i) {
+        var xLabel = document.createElementNS(svgNS, "text");
+        xLabel.setAttribute("x", xPos(i));
+        xLabel.setAttribute("y", CHART_HEIGHT - CHART_PADDING.bottom + 20);
+        xLabel.setAttribute("text-anchor", "middle");
+        xLabel.setAttribute("font-size", "10");
+        xLabel.setAttribute("fill", "#898781");
+        xLabel.textContent = date.length >= 10 ? date.slice(5) : date;
+        svg.appendChild(xLabel);
+      });
+
+      // CJ(강조 대상)를 맨 나중에 그려서 다른 회색 선들 위로 겹치게 한다.
+      var drawOrder = data.series.slice().sort(function (a) {
+        return a.channel === HISTORY_PRIORITY_CHANNEL ? 1 : -1;
+      });
+
+      drawOrder.forEach(function (s) {
+        var isPriority = s.channel === HISTORY_PRIORITY_CHANNEL;
+        var color = isPriority ? HISTORY_HIGHLIGHT_COLOR : HISTORY_MUTED_COLOR;
+
+        var pathData = "";
+        s.points.forEach(function (v, i) {
+          if (v == null) return;
+          pathData += (pathData === "" ? "M" : "L") + xPos(i) + "," + yPos(v) + " ";
+        });
+        if (!pathData) return;
+
+        var path = document.createElementNS(svgNS, "path");
+        path.setAttribute("d", pathData.trim());
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", color);
+        path.setAttribute("stroke-width", isPriority ? "3" : "1.5");
+        path.setAttribute("stroke-linecap", "round");
+        path.setAttribute("stroke-linejoin", "round");
+        if (!isPriority) path.setAttribute("opacity", "0.75");
+        var pathTitle = document.createElementNS(svgNS, "title");
+        pathTitle.textContent = s.channel;
+        path.appendChild(pathTitle);
+        svg.appendChild(path);
+
+        s.points.forEach(function (v, i) {
+          if (v == null) return;
+          var circle = document.createElementNS(svgNS, "circle");
+          circle.setAttribute("cx", xPos(i));
+          circle.setAttribute("cy", yPos(v));
+          circle.setAttribute("r", isPriority ? "4" : "2.5");
+          circle.setAttribute("fill", color);
+          var circleTitle = document.createElementNS(svgNS, "title");
+          circleTitle.textContent = s.channel + " · " + data.dates[i] + " · 조회수 " + v.toLocaleString();
+          circle.appendChild(circleTitle);
+          svg.appendChild(circle);
+        });
+      });
+
+      container.appendChild(svg);
+
+      // 범례: 색상만으로 구분하지 않도록 CJ는 굵은 글씨로도 구분한다(§8-1).
+      var legend = document.createElement("div");
+      legend.className = "history-chart-legend";
+      data.series.forEach(function (s) {
+        var isPriority = s.channel === HISTORY_PRIORITY_CHANNEL;
+        var item = document.createElement("span");
+        item.className = "history-legend-item" + (isPriority ? " is-priority" : "");
+
+        var swatch = document.createElement("span");
+        swatch.className = "history-legend-swatch";
+        swatch.style.background = isPriority ? HISTORY_HIGHLIGHT_COLOR : HISTORY_MUTED_COLOR;
+        item.appendChild(swatch);
+
+        var label = document.createElement("span");
+        label.textContent = s.channel;
+        item.appendChild(label);
+
+        legend.appendChild(item);
+      });
+      container.appendChild(legend);
+    }
+
     /* ── 히스토리 표 필터 (날짜 범위 + 채널) ── */
     var historyFilterStartEl = document.getElementById("historyFilterStart");
     var historyFilterEndEl = document.getElementById("historyFilterEnd");
@@ -1704,6 +1912,7 @@
         }
 
         populateHistoryChannelOptions();
+        renderHistoryChart();
         renderHistoryTable();
         showHistoryState("historyStateSuccess");
       } catch (e) {
