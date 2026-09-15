@@ -593,8 +593,8 @@
         <h2 id="nSettingTitle">비교 설정</h2>
         <div class="n-setting">
           <label for="nSetting">채널당 비교할 최근 영상 개수</label>
-          <input type="number" id="nSetting" name="nSetting" value="10" min="5" max="20" step="1" />
-          <span>개 (5~20)</span>
+          <input type="number" id="nSetting" name="nSetting" value="10" min="5" max="100" step="1" />
+          <span>개 (5~100, 50개를 넘으면 API 요청을 나눠서 가져옵니다)</span>
         </div>
       </section>
 
@@ -1159,7 +1159,7 @@
     nInput.addEventListener("change", function () {
       var value = parseInt(nInput.value, 10);
       if (isNaN(value)) value = 10;
-      value = Math.min(20, Math.max(5, value));
+      value = Math.min(100, Math.max(5, value));
       nInput.value = value;
       settings.n = value;
       saveSettings(settings);
@@ -1271,15 +1271,31 @@
       };
     }
 
+    // 유튜브 API는 한 번의 요청으로 최대 50개까지만 준다. n이 50 이하면 지금까지와 똑같이 요청 1번으로 끝나고,
+    // 50을 넘으면 그만큼만 더 나눠서 요청한다(예: n=100 → 요청 2번). n을 낮게(예: 10~20) 두면 속도·API 사용량은 그대로다.
     async function fetchRecentVideoIds(uploadsPlaylistId, n, apiKey) {
-      var params = new URLSearchParams({
-        part: "contentDetails",
-        playlistId: uploadsPlaylistId,
-        maxResults: String(n),
-        key: apiKey
-      });
-      var data = await fetchJson("https://www.googleapis.com/youtube/v3/playlistItems?" + params.toString());
-      return (data.items || []).map(function (item) { return item.contentDetails.videoId; });
+      var ids = [];
+      var pageToken = "";
+
+      while (ids.length < n) {
+        var remaining = n - ids.length;
+        var params = new URLSearchParams({
+          part: "contentDetails",
+          playlistId: uploadsPlaylistId,
+          maxResults: String(Math.min(50, remaining)),
+          key: apiKey
+        });
+        if (pageToken) params.set("pageToken", pageToken);
+
+        var data = await fetchJson("https://www.googleapis.com/youtube/v3/playlistItems?" + params.toString());
+        var items = data.items || [];
+        items.forEach(function (item) { ids.push(item.contentDetails.videoId); });
+
+        if (!data.nextPageToken || items.length === 0) break;
+        pageToken = data.nextPageToken;
+      }
+
+      return ids.slice(0, n);
     }
 
     // 유튜브는 영상 길이를 "PT1M3S"(1분 3초) 같은 ISO 8601 형식으로 준다. 초 단위 숫자로 바꿔준다.
