@@ -386,8 +386,9 @@
   .history-chart-legend {
     display: flex;
     flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 8px 16px;
-    margin-top: 14px;
+    margin-bottom: 12px;
     font-size: 0.8125rem;
     color: var(--color-text-muted);
   }
@@ -406,6 +407,12 @@
     border-radius: 2px;
     display: inline-block;
     flex: 0 0 auto;
+  }
+  .history-legend-swatch.is-line {
+    width: 16px;
+    height: 3px;
+    border-radius: 999px;
+    align-self: center;
   }
 
   .state-error {
@@ -543,6 +550,9 @@
       </button>
       <button type="button" id="tabBtnHistory" aria-controls="tabPanelHistory" aria-current="false">
         <span class="icon" aria-hidden="true">📈</span> 히스토리
+      </button>
+      <button type="button" id="tabBtnPeriod" aria-controls="tabPanelPeriod" aria-current="false">
+        <span class="icon" aria-hidden="true">🗓️</span> 기간 조회
       </button>
     </div>
   </nav>
@@ -699,25 +709,28 @@
       <!-- 상태 패널: 성공 (그래프 + 원본 표) -->
       <section class="state-panel" id="historyStateSuccess">
 
-        <section class="card" id="historyChartCard" aria-labelledby="historyChartTitle">
-          <h2 id="historyChartTitle">채널별 조회수 추이</h2>
-          <div id="historyChartContainer"></div>
-        </section>
-
-        <section class="card" aria-labelledby="historyTableTitle">
-          <h2 id="historyTableTitle">날짜별 히스토리</h2>
-
-          <div class="result-filter-row">
+        <!-- 날짜 범위는 그래프·표 둘 다에 적용되고, 채널 필터는 표에만 적용된다(그래프는 항상 전체 채널 비교) -->
+        <section class="card">
+          <div class="result-filter-row" style="margin-bottom: 0;">
             <label for="historyFilterStart">시작일
               <input type="date" id="historyFilterStart" />
             </label>
             <label for="historyFilterEnd">종료일
               <input type="date" id="historyFilterEnd" />
             </label>
-            <label for="historyFilterChannel">채널
+            <label for="historyFilterChannel">채널 (표에만 적용)
               <select id="historyFilterChannel"><option value="">전체 채널</option></select>
             </label>
           </div>
+        </section>
+
+        <section class="card" id="historyChartCard" aria-labelledby="historyChartTitle">
+          <h2 id="historyChartTitle">채널별 조회수 비교 (선택 기간 합계)</h2>
+          <div id="historyChartContainer"></div>
+        </section>
+
+        <section class="card" aria-labelledby="historyTableTitle">
+          <h2 id="historyTableTitle">날짜별 히스토리</h2>
 
           <p class="channel-empty-hint" id="historyTableEmptyHint" style="display:none;">조건에 맞는 데이터가 없어요. 날짜 범위나 채널을 넓혀보세요.</p>
 
@@ -745,6 +758,98 @@
 
     </section>
 
+    <!-- ══════════ 기간 조회 (업로드일 기준 과거 영상 검색, 현재 누적 수치) ══════════ -->
+    <section class="tab-panel" id="tabPanelPeriod" aria-labelledby="tabBtnPeriod">
+
+      <section class="card" aria-labelledby="periodSettingsTitle">
+        <h2 id="periodSettingsTitle">조회 조건</h2>
+
+        <div class="result-filter-row">
+          <label for="periodStartInput">시작일 (업로드일 기준)
+            <input type="date" id="periodStartInput" />
+          </label>
+          <label for="periodEndInput">종료일 (업로드일 기준)
+            <input type="date" id="periodEndInput" />
+          </label>
+        </div>
+
+        <p style="margin: 0 0 8px; font-weight: 600; font-size: 0.9375rem;">채널 선택</p>
+        <ul class="channel-list" id="periodChannelChecklist" style="border: 1px solid var(--color-border); border-radius: var(--radius); padding: 0 12px; margin-bottom: 12px;"></ul>
+        <p class="channel-empty-hint" id="periodChannelEmptyHint" style="display: none;">먼저 "채널 관리"에서 채널을 등록해주세요.</p>
+
+        <p class="input-error" id="periodInputError" role="alert"></p>
+
+        <button type="button" class="btn-primary" id="periodSearchBtn">조회</button>
+      </section>
+
+      <!-- 상태 패널: 로딩 -->
+      <section class="state-panel" id="periodStateLoading" aria-live="polite">
+        <h2>조회 중...</h2>
+        <p id="periodProgressText">0 / 0 채널 처리 중</p>
+        <div class="progress-track"><div class="progress-fill" id="periodProgressFill"></div></div>
+      </section>
+
+      <!-- 상태 패널: 에러 -->
+      <section class="state-panel state-error" id="periodStateError" aria-live="assertive">
+        <h2>문제가 발생했습니다</h2>
+        <p id="periodErrorMessageText"></p>
+        <button type="button" class="btn-secondary" id="periodRetryBtn">다시 시도</button>
+
+        <div class="api-key-form" id="periodApiKeyForm">
+          <label for="periodApiKeyInput">본인의 유튜브 API 키</label>
+          <div class="api-key-form-row">
+            <input type="text" id="periodApiKeyInput" name="periodApiKeyInput" placeholder="YouTube Data API 키를 붙여넣으세요" autocomplete="off" />
+            <button type="button" class="btn-primary" id="periodSaveApiKeyBtn">키 저장하고 다시 시도</button>
+          </div>
+          <p>키는 이 브라우저에만 저장되며, 다른 사람에게 전달되지 않아요. 키가 없다면 <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console</a>에서 무료로 발급받을 수 있어요 (YouTube Data API v3 사용 설정 필요).</p>
+        </div>
+      </section>
+
+      <!-- 상태 패널: 결과 없음 -->
+      <section class="state-panel" id="periodStateEmpty" aria-live="polite">
+        <h2>조건에 맞는 영상이 없어요</h2>
+        <p>선택한 채널·기간에 올라온 영상이 없습니다. 기간을 넓히거나 다른 채널을 선택해보세요.</p>
+      </section>
+
+      <!-- 상태 패널: 성공 -->
+      <section class="state-panel" id="periodStateSuccess">
+
+        <section class="card state-error" id="periodCapWarning" style="display: none;">
+          <p id="periodCapWarningText" style="margin: 0;"></p>
+        </section>
+
+        <div class="action-row">
+          <span class="channel-count-badge" id="periodResultCount">0개 영상</span>
+          <div class="buttons">
+            <button type="button" class="btn-secondary" id="periodExportBtn">엑셀로 내보내기</button>
+          </div>
+        </div>
+
+        <section class="card">
+          <h2>기간 조회 결과 <span style="font-weight: 400; color: var(--color-text-muted); font-size: 0.8125rem;">(조회수·좋아요·댓글수는 오늘 기준 누적치입니다)</span></h2>
+
+          <div class="table-scroll">
+            <table class="result-table">
+              <thead>
+                <tr>
+                  <th>채널명</th>
+                  <th>영상 제목</th>
+                  <th>업로드일</th>
+                  <th>구분</th>
+                  <th>조회수</th>
+                  <th>좋아요</th>
+                  <th>댓글수</th>
+                  <th>영상 링크</th>
+                </tr>
+              </thead>
+              <tbody id="periodTableBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+    </section>
+
   </div>
 </div>
 
@@ -761,7 +866,8 @@
     var tabs = [
       { btn: "tabBtnChannel", panel: "tabPanelChannel", title: "채널 관리" },
       { btn: "tabBtnCompare", panel: "tabPanelCompare", title: "비교 결과" },
-      { btn: "tabBtnHistory", panel: "tabPanelHistory", title: "히스토리" }
+      { btn: "tabBtnHistory", panel: "tabPanelHistory", title: "히스토리" },
+      { btn: "tabBtnPeriod", panel: "tabPanelPeriod", title: "기간 조회" }
     ];
     var pageTitleEl = document.getElementById("pageTitle");
 
@@ -961,6 +1067,8 @@
       if (channels.length === 0) {
         showState("stateEmpty");
       }
+
+      renderPeriodChannelChecklist();
     }
 
     /* ══════════ 채널 추가 ══════════ */
@@ -1449,7 +1557,7 @@
     // 화면 "비교 결과" 표에 보이는 내용(현재 필터가 적용된 상태)을,
     // 매일 자동 수집되는 히스토리 데이터와 같은 정규화 포맷(9개 컬럼)으로 내보낸다.
     var RESULT_HEADERS = [
-      "기준일", "다운로드 시간", "Channel", "Content", "Type", "VIDEO_ID", "Views", "Likes", "Comments", "업로드일"
+      "VIDEO_ID", "업로드일", "Channel", "Content", "링크", "조회일자", "조회시간", "Type", "Views", "Likes", "Comments"
     ];
 
     // "롱폼"/"쇼츠"(화면 표시용 한글)를 히스토리 데이터와 같은 영문 Type 값으로 바꾼다.
@@ -1513,16 +1621,17 @@
       });
       var body = sorted.map(function (row) {
         return [
-          baseDate,
-          downloadTime,
+          row.videoId,
+          formatDate(row.publishedAt),
           toNFC(row.channelName),
           toNFC(row.title),
+          "https://youtu.be/" + row.videoId,
+          baseDate,
+          downloadTime,
           toExportType(row.videoFormat),
-          row.videoId,
           row.viewCount != null ? row.viewCount : "-",
           row.likeCount != null ? row.likeCount : "-",
-          row.commentCount != null ? row.commentCount : "-",
-          formatDate(row.publishedAt)
+          row.commentCount != null ? row.commentCount : "-"
         ];
       });
       return [RESULT_HEADERS].concat(body);
@@ -1539,8 +1648,308 @@
       XLSX.writeFile(workbook, "유튜브채용채널비교_" + todayStr + ".xlsx");
     });
 
+    /* ══════════ 기간 조회 (업로드일 기준으로 과거 영상을 찾고, 현재 누적 수치를 보여줌) ══════════ */
+    // "9월 시점의 조회수" 같은 과거 스냅샷은 매일 자동 수집(히스토리)이 그 시점부터 쌓아둔 기록이 있어야만 가능하다.
+    // 이 기능은 그 대신 "그 기간에 올라온 영상이 무엇인지 + 오늘 기준 누적 수치"를 보여준다 (설계 확정).
+    var PERIOD_CHANNEL_VIDEO_CAP = 500; // 채널당 최대 확인 개수. 영상이 아주 많은 채널에서 API 사용량이 끝없이 늘어나는 것을 막는다.
+    var periodResultRows = []; // 마지막 기간 조회 결과 — 엑셀 내보내기에 사용
+    var periodChannelSelection = {}; // channel.id -> boolean. 처음 보는 채널은 기본 선택(true)으로 시작한다.
+
+    var periodStatePanels = ["periodStateLoading", "periodStateError", "periodStateEmpty", "periodStateSuccess"];
+    function showPeriodState(stateId) {
+      periodStatePanels.forEach(function (id) {
+        document.getElementById(id).classList.toggle("is-active", id === stateId);
+      });
+    }
+
+    // "채널 관리"에 등록된 채널 목록을 체크박스로 보여준다. 채널 추가/삭제 때(render()) 항상 다시 그려서 최신 상태를 유지한다.
+    function renderPeriodChannelChecklist() {
+      var listEl = document.getElementById("periodChannelChecklist");
+      var emptyHint = document.getElementById("periodChannelEmptyHint");
+      if (!listEl) return; // 아직 DOM이 준비되기 전 호출 방지
+
+      listEl.style.display = channels.length === 0 ? "none" : "block";
+      emptyHint.style.display = channels.length === 0 ? "block" : "none";
+      listEl.innerHTML = "";
+
+      channels.forEach(function (channel) {
+        if (!(channel.id in periodChannelSelection)) {
+          periodChannelSelection[channel.id] = true;
+        }
+
+        var li = document.createElement("li");
+        var label = document.createElement("label");
+        label.style.display = "flex";
+        label.style.alignItems = "center";
+        label.style.gap = "10px";
+        label.style.width = "100%";
+        label.style.cursor = "pointer";
+
+        var checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = periodChannelSelection[channel.id];
+        checkbox.addEventListener("change", function () {
+          periodChannelSelection[channel.id] = checkbox.checked;
+        });
+
+        var nameEl = document.createElement("span");
+        nameEl.textContent = displayName(channel);
+
+        label.appendChild(checkbox);
+        label.appendChild(nameEl);
+        li.appendChild(label);
+        listEl.appendChild(li);
+      });
+    }
+
+    // 업로드 재생목록은 최신 영상이 먼저 나온다. 그래서 start보다 이른 업로드일을 만나는 순간 더 볼 필요가 없다.
+    // checked가 PERIOD_CHANNEL_VIDEO_CAP에 닿으면 더 과거로 가지 않고 멈추고, 그 사실을 reachedCap으로 알려준다.
+    async function fetchVideoIdsInRange(uploadsPlaylistId, start, end, apiKey) {
+      var matchedIds = [];
+      var pageToken = "";
+      var checked = 0;
+      var reachedCap = false;
+      var passedStart = false;
+
+      while (true) {
+        var params = new URLSearchParams({
+          part: "contentDetails",
+          playlistId: uploadsPlaylistId,
+          maxResults: "50",
+          key: apiKey
+        });
+        if (pageToken) params.set("pageToken", pageToken);
+
+        var data = await fetchJson("https://www.googleapis.com/youtube/v3/playlistItems?" + params.toString());
+        var items = data.items || [];
+
+        for (var i = 0; i < items.length; i++) {
+          var detail = items[i].contentDetails;
+          var publishedDate = (detail.videoPublishedAt || "").slice(0, 10);
+          checked++;
+
+          if (publishedDate && publishedDate < start) {
+            passedStart = true;
+            break;
+          }
+          if (publishedDate && publishedDate <= end) {
+            matchedIds.push(detail.videoId);
+          }
+          if (checked >= PERIOD_CHANNEL_VIDEO_CAP) {
+            reachedCap = true;
+            break;
+          }
+        }
+
+        if (passedStart || reachedCap || !data.nextPageToken) break;
+        pageToken = data.nextPageToken;
+      }
+
+      return { videoIds: matchedIds, reachedCap: reachedCap };
+    }
+
+    // videos.list는 한 번에 최대 50개 ID까지만 받아준다. 그보다 많으면 50개씩 나눠서 여러 번 호출한다.
+    async function fetchVideoStatsChunked(videoIds, apiKey) {
+      var all = [];
+      for (var i = 0; i < videoIds.length; i += 50) {
+        var chunk = videoIds.slice(i, i + 50);
+        var stats = await fetchVideoStats(chunk, apiKey);
+        all = all.concat(stats);
+      }
+      return all;
+    }
+
+    function showPeriodApiError(err) {
+      document.getElementById("periodErrorMessageText").textContent = err.message || "유튜브 API 요청 중 문제가 발생했습니다.";
+      var needsKeyInput = err.type === "noKey" || err.type === "quota" || err.type === "invalidKey";
+      document.getElementById("periodApiKeyForm").style.display = needsKeyInput ? "" : "none";
+      document.getElementById("periodRetryBtn").style.display = needsKeyInput ? "none" : "";
+      showPeriodState("periodStateError");
+    }
+
+    function renderPeriodCapWarning(cappedNames) {
+      var box = document.getElementById("periodCapWarning");
+      if (cappedNames.length === 0) {
+        box.style.display = "none";
+        return;
+      }
+      box.style.display = "";
+      document.getElementById("periodCapWarningText").textContent =
+        "다음 채널은 최대 " + PERIOD_CHANNEL_VIDEO_CAP + "개까지만 확인했어요. 그보다 오래된 영상은 이 결과에 빠져 있을 수 있습니다: " + cappedNames.join(", ");
+    }
+
+    function renderPeriodTable(rows) {
+      var sorted = rows.slice().sort(function (a, b) { return new Date(b.publishedAt) - new Date(a.publishedAt); });
+      var tbody = document.getElementById("periodTableBody");
+      tbody.innerHTML = "";
+
+      sorted.forEach(function (row) {
+        var tr = document.createElement("tr");
+        function addCell(text) {
+          var td = document.createElement("td");
+          td.textContent = text;
+          tr.appendChild(td);
+        }
+        addCell(row.channelName);
+        addCell(row.title);
+        addCell(formatDate(row.publishedAt));
+        addCell(row.videoFormat);
+        addCell(row.viewCount != null ? row.viewCount.toLocaleString() : "-");
+        addCell(row.likeCount != null ? row.likeCount.toLocaleString() : "-");
+        addCell(row.commentCount != null ? row.commentCount.toLocaleString() : "-");
+
+        var linkTd = document.createElement("td");
+        var linkEl = document.createElement("a");
+        linkEl.href = "https://www.youtube.com/watch?v=" + row.videoId;
+        linkEl.target = "_blank";
+        linkEl.rel = "noopener";
+        linkEl.textContent = "보기";
+        linkTd.appendChild(linkEl);
+        tr.appendChild(linkTd);
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function runPeriodSearch() {
+      var periodInputError = document.getElementById("periodInputError");
+      periodInputError.classList.remove("is-active");
+      periodInputError.textContent = "";
+
+      var start = document.getElementById("periodStartInput").value;
+      var end = document.getElementById("periodEndInput").value;
+
+      if (!start || !end) {
+        periodInputError.textContent = "시작일과 종료일을 모두 입력해주세요.";
+        periodInputError.classList.add("is-active");
+        return;
+      }
+      if (start > end) {
+        periodInputError.textContent = "시작일은 종료일보다 늦을 수 없습니다.";
+        periodInputError.classList.add("is-active");
+        return;
+      }
+
+      var selectedChannels = channels.filter(function (ch) { return periodChannelSelection[ch.id]; });
+      if (selectedChannels.length === 0) {
+        periodInputError.textContent = "채널을 하나 이상 선택해주세요.";
+        periodInputError.classList.add("is-active");
+        return;
+      }
+
+      var apiKey = settings.userApiKey;
+      if (!apiKey) {
+        var noKeyErr = new Error("조회를 하려면 본인의 유튜브 API 키를 먼저 입력해주세요.");
+        noKeyErr.type = "noKey";
+        showPeriodApiError(noKeyErr);
+        return;
+      }
+
+      var searchBtn = document.getElementById("periodSearchBtn");
+      searchBtn.disabled = true;
+      showPeriodState("periodStateLoading");
+
+      var total = selectedChannels.length;
+      var processed = 0;
+      var resultRows = [];
+      var cappedChannelNames = [];
+      var globalError = null;
+      var progressText = document.getElementById("periodProgressText");
+      var progressFill = document.getElementById("periodProgressFill");
+
+      progressText.textContent = "0 / " + total + " 채널 처리 중";
+      progressFill.style.width = "0%";
+
+      for (var i = 0; i < selectedChannels.length; i++) {
+        var channel = selectedChannels[i];
+        try {
+          var info = await fetchChannelInfo(channel, apiKey);
+          var rangeResult = await fetchVideoIdsInRange(info.uploadsPlaylistId, start, end, apiKey);
+          if (rangeResult.reachedCap) cappedChannelNames.push(info.channelTitle);
+
+          var stats = await fetchVideoStatsChunked(rangeResult.videoIds, apiKey);
+          stats.forEach(function (stat) {
+            resultRows.push(Object.assign({ channelName: info.channelTitle }, stat));
+          });
+        } catch (err) {
+          if (err.type === "quota" || err.type === "invalidKey" || err.type === "network") {
+            globalError = err;
+            break;
+          }
+          // notFound 등 채널 하나만의 문제는 건너뛰고 나머지 채널을 계속 진행한다 (§비교 결과와 동일한 정책).
+        }
+
+        processed++;
+        progressText.textContent = processed + " / " + total + " 채널 처리 중";
+        progressFill.style.width = Math.round((processed / total) * 100) + "%";
+      }
+
+      searchBtn.disabled = false;
+
+      if (globalError) {
+        showPeriodApiError(globalError);
+        return;
+      }
+
+      if (resultRows.length === 0) {
+        showPeriodState("periodStateEmpty");
+        return;
+      }
+
+      periodResultRows = resultRows;
+      renderPeriodCapWarning(cappedChannelNames);
+      renderPeriodTable(resultRows);
+      document.getElementById("periodResultCount").textContent = resultRows.length + "개 영상";
+      showPeriodState("periodStateSuccess");
+    }
+
+    document.getElementById("periodSearchBtn").addEventListener("click", runPeriodSearch);
+    document.getElementById("periodRetryBtn").addEventListener("click", runPeriodSearch);
+    document.getElementById("periodSaveApiKeyBtn").addEventListener("click", function () {
+      var value = document.getElementById("periodApiKeyInput").value.trim();
+      if (!value) return;
+      settings.userApiKey = value;
+      saveSettings(settings);
+      document.getElementById("periodApiKeyInput").value = "";
+      runPeriodSearch();
+    });
+
+    // 엑셀 내보내기 — "비교 결과"·히스토리와 동일한 정규화 포맷(11개 컬럼)을 그대로 따른다.
+    function buildPeriodExportRows() {
+      var now = new Date();
+      var baseDate = formatExportDate(now);
+      var downloadTime = formatExportTime(now);
+
+      var sorted = periodResultRows.slice().sort(function (a, b) { return new Date(b.publishedAt) - new Date(a.publishedAt); });
+      var body = sorted.map(function (row) {
+        return [
+          row.videoId,
+          formatDate(row.publishedAt),
+          toNFC(row.channelName),
+          toNFC(row.title),
+          "https://youtu.be/" + row.videoId,
+          baseDate,
+          downloadTime,
+          toExportType(row.videoFormat),
+          row.viewCount != null ? row.viewCount : "-",
+          row.likeCount != null ? row.likeCount : "-",
+          row.commentCount != null ? row.commentCount : "-"
+        ];
+      });
+      return [RESULT_HEADERS].concat(body);
+    }
+
+    document.getElementById("periodExportBtn").addEventListener("click", function () {
+      if (periodResultRows.length === 0) return;
+      var sheet = XLSX.utils.aoa_to_sheet(buildPeriodExportRows());
+      var workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, sheet, "기간 조회 결과");
+      var todayStr = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(workbook, "유튜브채용채널_기간조회_" + todayStr + ".xlsx");
+    });
+
     /* ══════════ 히스토리 (매일 자동 수집된 data/history.csv 조회) ══════════ */
-    // collect.js가 만드는 CSV 컬럼 순서와 반드시 일치해야 한다: 기준일,다운로드 시간,Channel,Content,Type,VIDEO_ID,Views,Likes,Comments,업로드일
+    // collect.js가 만드는 CSV 컬럼 순서와 반드시 일치해야 한다: VIDEO_ID,업로드일,Channel,Content,링크,조회일자,조회시간,Type,Views,Likes,Comments
     var HISTORY_CSV_PATH = "data/history.csv";
     var HISTORY_PRIORITY_CHANNEL = "CJ Careers"; // CJ 담당자 관점에서 그래프 맨 앞 + 강조 표시 (설계 확정)
     var historyRows = []; // 파싱된 전체 히스토리 원본 행
@@ -1603,199 +2012,214 @@
 
       return table.slice(1).map(function (cols) {
         return {
-          baseDate: cols[0] || "",
-          downloadTime: cols[1] || "",
+          videoId: cols[0] || "",
+          publishedAt: cols[1] || "",
           channelName: cols[2] || "",
           title: cols[3] || "",
-          videoFormat: cols[4] === "Longform" ? "롱폼" : (cols[4] === "Shorts" ? "쇼츠" : "-"),
-          videoId: cols[5] || "",
-          viewCount: toIntOrNull(cols[6]),
-          likeCount: toIntOrNull(cols[7]),
-          commentCount: toIntOrNull(cols[8]),
-          publishedAt: cols[9] || ""
+          videoLink: cols[4] || "",
+          baseDate: cols[5] || "",
+          downloadTime: cols[6] || "",
+          videoFormat: cols[7] === "Longform" ? "롱폼" : (cols[7] === "Shorts" ? "쇼츠" : "-"),
+          viewCount: toIntOrNull(cols[8]),
+          likeCount: toIntOrNull(cols[9]),
+          commentCount: toIntOrNull(cols[10])
         };
       }).filter(function (row) { return row.baseDate && row.channelName; });
     }
 
-    /* ── 히스토리: 채널별 조회수 추이 그래프 ── */
-    // 그래프는 표의 날짜/채널 필터와 무관하게 항상 전체 히스토리 기준으로 그린다(추이 비교가 목적이라
-    // 표를 좁혀 봐도 그래프까지 같이 줄어들면 "왜 그래프가 방금 사라졌지?"라는 물음표가 생기기 때문).
-    var HISTORY_HIGHLIGHT_COLOR = "#2a78d6"; // CJ 전용 강조색 (categorical slot 1, blue)
-    var HISTORY_MUTED_COLOR = "#898781";     // 나머지 채널: 축/보조텍스트와 같은 무채색 톤으로 배경화
-    var CHART_WIDTH = 760;
-    var CHART_HEIGHT = 300;
-    var CHART_PADDING = { top: 16, right: 16, bottom: 36, left: 56 };
+    /* ── 히스토리: 채널별 조회수 비교 막대그래프 (+ 좋아요 합계 선) ── */
+    // 표 위의 날짜 필터(시작일~종료일)를 그대로 따라간다 — "이 기간 동안 채널별로 얼마나 봤나"를
+    // 비교하는 게 목적이라, 표를 좁히면 그래프도 같은 기간 기준으로 다시 계산된다.
+    // 채널 드롭다운 필터는 표 전용으로 두고 그래프에는 적용하지 않는다(그래프는 항상 채널 간 비교가 목적).
+    var HISTORY_HIGHLIGHT_COLOR = "#1c3a6e"; // CJ 막대: 진한 남색으로 확실히 구분
+    var HISTORY_MUTED_COLOR = "#9ec5f4";     // 나머지 채널 막대: 연한 하늘색
+    var HISTORY_LINE_COLOR = "#eb6834";      // 좋아요 합계 선: 주황(categorical slot 2)
+    var CHART_WIDTH = 640;
+    var CHART_HEIGHT = 320;
+    var CHART_PADDING = { top: 34, right: 16, bottom: 56, left: 16 };
 
-    // 날짜별 × 채널별 조회수 합계를 계산한다. CJ를 배열 맨 앞으로 보내(§1-2a: 우선순위순),
-    // 범례에서도 CJ가 항상 먼저 보이게 한다.
-    function buildChannelViewSeries() {
-      var byDateChannel = {};
-      var dateSet = {};
-      var channelSet = {};
+    function getDateRangeFilteredHistoryRows() {
+      var start = historyFilterStartEl.value;
+      var end = historyFilterEndEl.value;
+      return historyRows.filter(function (row) {
+        if (start && row.baseDate < start) return false;
+        if (end && row.baseDate > end) return false;
+        return true;
+      });
+    }
 
-      historyRows.forEach(function (row) {
-        if (row.viewCount == null) return;
-        dateSet[row.baseDate] = true;
-        channelSet[row.channelName] = true;
-        byDateChannel[row.baseDate] = byDateChannel[row.baseDate] || {};
-        byDateChannel[row.baseDate][row.channelName] =
-          (byDateChannel[row.baseDate][row.channelName] || 0) + row.viewCount;
+    // 선택된 기간의 채널별 조회수 합계·좋아요 합계를 구해, 조회수 내림차순으로 정렬한다
+    // (레퍼런스처럼 "가장 많이 본 채널"이 왼쪽에 오는 순위형 막대그래프).
+    function buildChannelTotals() {
+      var rows = getDateRangeFilteredHistoryRows();
+      var totals = {};
+
+      rows.forEach(function (row) {
+        if (!totals[row.channelName]) {
+          totals[row.channelName] = { channel: row.channelName, views: 0, likes: 0 };
+        }
+        if (row.viewCount != null) totals[row.channelName].views += row.viewCount;
+        if (row.likeCount != null) totals[row.channelName].likes += row.likeCount;
       });
 
-      var dates = Object.keys(dateSet).sort();
-      var channels = Object.keys(channelSet).sort();
-      var priorityIndex = channels.indexOf(HISTORY_PRIORITY_CHANNEL);
-      if (priorityIndex > 0) {
-        channels.splice(priorityIndex, 1);
-        channels.unshift(HISTORY_PRIORITY_CHANNEL);
-      }
+      return Object.keys(totals)
+        .map(function (name) { return totals[name]; })
+        .sort(function (a, b) { return b.views - a.views; });
+    }
 
-      var series = channels.map(function (channel) {
-        var points = dates.map(function (date) {
-          var value = byDateChannel[date] && byDateChannel[date][channel];
-          return value == null ? null : value;
-        });
-        return { channel: channel, points: points };
-      });
-
-      return { dates: dates, series: series };
+    // 긴 채널명은 막대 아래 라벨에서 잘라 보여주고, 전체 이름은 title 툴팁으로 확인할 수 있게 한다.
+    function shortenChannelLabel(name) {
+      return name.length > 8 ? name.slice(0, 8) + "…" : name;
     }
 
     function renderHistoryChart() {
       var container = document.getElementById("historyChartContainer");
       container.innerHTML = "";
 
-      var data = buildChannelViewSeries();
-      if (data.dates.length === 0) {
+      var totals = buildChannelTotals();
+      if (totals.length === 0) {
         var msg = document.createElement("p");
         msg.className = "channel-empty-hint";
-        msg.textContent = "그래프를 그릴 조회수 데이터가 아직 없어요.";
+        msg.textContent = "그래프를 그릴 데이터가 아직 없어요.";
         container.appendChild(msg);
         return;
       }
 
+      // 범례 (색상만으로 구분하지 않도록 텍스트 라벨을 항상 같이 표시, §8-1)
+      var legend = document.createElement("div");
+      legend.className = "history-chart-legend";
+      [
+        { color: HISTORY_HIGHLIGHT_COLOR, label: "CJ Careers · 조회수", shape: "square" },
+        { color: HISTORY_MUTED_COLOR, label: "다른 채널 · 조회수", shape: "square" },
+        { color: HISTORY_LINE_COLOR, label: "좋아요 합계(선)", shape: "line" }
+      ].forEach(function (item) {
+        var el = document.createElement("span");
+        el.className = "history-legend-item";
+        var swatch = document.createElement("span");
+        swatch.className = "history-legend-swatch" + (item.shape === "line" ? " is-line" : "");
+        swatch.style.background = item.color;
+        el.appendChild(swatch);
+        var label = document.createElement("span");
+        label.textContent = item.label;
+        el.appendChild(label);
+        legend.appendChild(el);
+      });
+      container.appendChild(legend);
+
       var innerWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
       var innerHeight = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
+      var bandWidth = innerWidth / totals.length;
+      var barWidth = Math.min(bandWidth * 0.55, 64);
 
-      var maxValue = 0;
-      data.series.forEach(function (s) {
-        s.points.forEach(function (v) { if (v != null && v > maxValue) maxValue = v; });
-      });
-      if (maxValue === 0) maxValue = 1;
-      maxValue *= 1.1; // 맨 위 점이 그래프 상단에 딱 붙지 않도록 여유를 둔다
+      var maxViews = Math.max.apply(null, totals.map(function (t) { return t.views; })) || 1;
+      var maxLikes = Math.max.apply(null, totals.map(function (t) { return t.likes; })) || 1;
 
-      var xStep = data.dates.length > 1 ? innerWidth / (data.dates.length - 1) : 0;
-      function xPos(i) { return CHART_PADDING.left + (data.dates.length > 1 ? i * xStep : innerWidth / 2); }
-      function yPos(v) { return CHART_PADDING.top + innerHeight - (v / maxValue) * innerHeight; }
+      // 막대와 선은 각자 다른 값 범위를 이 안에서 따로 0~innerHeight로 환산한다(레퍼런스와 같은 방식).
+      // 실제 숫자를 막대/점 위에 직접 라벨로 표시해서 "두 지표가 같은 눈금이 아니다"로 인한 오해를 줄인다.
+      function barTopY(views) { return CHART_PADDING.top + innerHeight - (views / (maxViews * 1.15)) * innerHeight; }
+      function lineY(likes) { return CHART_PADDING.top + innerHeight - (likes / (maxLikes * 1.25)) * innerHeight; }
+      function bandCenterX(i) { return CHART_PADDING.left + bandWidth * i + bandWidth / 2; }
 
       var svgNS = "http://www.w3.org/2000/svg";
       var svg = document.createElementNS(svgNS, "svg");
       svg.setAttribute("viewBox", "0 0 " + CHART_WIDTH + " " + CHART_HEIGHT);
       svg.setAttribute("role", "img");
-      svg.setAttribute("aria-label", "채널별 날짜별 조회수 합계 추이. CJ Careers는 파란색 굵은 선으로 강조.");
+      svg.setAttribute(
+        "aria-label",
+        "채널별 조회수 비교 막대그래프. CJ Careers는 남색 막대로 강조. 주황 선은 채널별 좋아요 합계."
+      );
 
-      // 가로 눈금선 + y축 라벨 (4단계)
-      var GRID_STEPS = 4;
-      for (var g = 0; g <= GRID_STEPS; g++) {
-        var value = (maxValue / GRID_STEPS) * g;
-        var y = yPos(value);
+      // 기준선(0)
+      var baseline = document.createElementNS(svgNS, "line");
+      baseline.setAttribute("x1", CHART_PADDING.left);
+      baseline.setAttribute("x2", CHART_WIDTH - CHART_PADDING.right);
+      baseline.setAttribute("y1", CHART_PADDING.top + innerHeight);
+      baseline.setAttribute("y2", CHART_PADDING.top + innerHeight);
+      baseline.setAttribute("stroke", "#c3c2b7");
+      baseline.setAttribute("stroke-width", "1");
+      svg.appendChild(baseline);
 
-        var line = document.createElementNS(svgNS, "line");
-        line.setAttribute("x1", CHART_PADDING.left);
-        line.setAttribute("x2", CHART_WIDTH - CHART_PADDING.right);
-        line.setAttribute("y1", y);
-        line.setAttribute("y2", y);
-        line.setAttribute("stroke", "#e1e0d9");
-        line.setAttribute("stroke-width", "1");
-        svg.appendChild(line);
+      // 막대 + 값 라벨 + x축 채널명
+      totals.forEach(function (t, i) {
+        var isPriority = t.channel === HISTORY_PRIORITY_CHANNEL;
+        var x = bandCenterX(i) - barWidth / 2;
+        var topY = barTopY(t.views);
+        var height = CHART_PADDING.top + innerHeight - topY;
 
-        var yLabel = document.createElementNS(svgNS, "text");
-        yLabel.setAttribute("x", CHART_PADDING.left - 8);
-        yLabel.setAttribute("y", y + 4);
-        yLabel.setAttribute("text-anchor", "end");
-        yLabel.setAttribute("font-size", "10");
-        yLabel.setAttribute("fill", "#898781");
-        yLabel.textContent = Math.round(value).toLocaleString();
-        svg.appendChild(yLabel);
-      }
+        var rect = document.createElementNS(svgNS, "rect");
+        rect.setAttribute("x", x);
+        rect.setAttribute("y", topY);
+        rect.setAttribute("width", barWidth);
+        rect.setAttribute("height", Math.max(height, 0));
+        rect.setAttribute("fill", isPriority ? HISTORY_HIGHLIGHT_COLOR : HISTORY_MUTED_COLOR);
+        rect.setAttribute("rx", "3");
+        var rectTitle = document.createElementNS(svgNS, "title");
+        rectTitle.textContent = t.channel + " · 조회수 합계 " + t.views.toLocaleString();
+        rect.appendChild(rectTitle);
+        svg.appendChild(rect);
 
-      // x축 날짜 라벨 (MM-DD만 짧게 표시)
-      data.dates.forEach(function (date, i) {
+        var viewLabel = document.createElementNS(svgNS, "text");
+        viewLabel.setAttribute("x", bandCenterX(i));
+        viewLabel.setAttribute("y", topY - 6);
+        viewLabel.setAttribute("text-anchor", "middle");
+        viewLabel.setAttribute("font-size", "11");
+        viewLabel.setAttribute("font-weight", isPriority ? "700" : "400");
+        viewLabel.setAttribute("fill", "#0b0b0b");
+        viewLabel.textContent = t.views.toLocaleString();
+        svg.appendChild(viewLabel);
+
         var xLabel = document.createElementNS(svgNS, "text");
-        xLabel.setAttribute("x", xPos(i));
-        xLabel.setAttribute("y", CHART_HEIGHT - CHART_PADDING.bottom + 20);
+        xLabel.setAttribute("x", bandCenterX(i));
+        xLabel.setAttribute("y", CHART_PADDING.top + innerHeight + 18);
         xLabel.setAttribute("text-anchor", "middle");
-        xLabel.setAttribute("font-size", "10");
-        xLabel.setAttribute("fill", "#898781");
-        xLabel.textContent = date.length >= 10 ? date.slice(5) : date;
+        xLabel.setAttribute("font-size", "10.5");
+        xLabel.setAttribute("font-weight", isPriority ? "700" : "400");
+        xLabel.setAttribute("fill", isPriority ? "#0b0b0b" : "#52514e");
+        xLabel.textContent = shortenChannelLabel(t.channel);
+        var xLabelTitle = document.createElementNS(svgNS, "title");
+        xLabelTitle.textContent = t.channel;
+        xLabel.appendChild(xLabelTitle);
         svg.appendChild(xLabel);
       });
 
-      // CJ(강조 대상)를 맨 나중에 그려서 다른 회색 선들 위로 겹치게 한다.
-      var drawOrder = data.series.slice().sort(function (a) {
-        return a.channel === HISTORY_PRIORITY_CHANNEL ? 1 : -1;
+      // 좋아요 합계 선 + 점 + 값 라벨
+      var linePath = "";
+      totals.forEach(function (t, i) {
+        linePath += (linePath === "" ? "M" : "L") + bandCenterX(i) + "," + lineY(t.likes) + " ";
       });
+      var path = document.createElementNS(svgNS, "path");
+      path.setAttribute("d", linePath.trim());
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", HISTORY_LINE_COLOR);
+      path.setAttribute("stroke-width", "2");
+      path.setAttribute("stroke-linecap", "round");
+      path.setAttribute("stroke-linejoin", "round");
+      svg.appendChild(path);
 
-      drawOrder.forEach(function (s) {
-        var isPriority = s.channel === HISTORY_PRIORITY_CHANNEL;
-        var color = isPriority ? HISTORY_HIGHLIGHT_COLOR : HISTORY_MUTED_COLOR;
+      totals.forEach(function (t, i) {
+        var cy = lineY(t.likes);
+        var circle = document.createElementNS(svgNS, "circle");
+        circle.setAttribute("cx", bandCenterX(i));
+        circle.setAttribute("cy", cy);
+        circle.setAttribute("r", "3.5");
+        circle.setAttribute("fill", HISTORY_LINE_COLOR);
+        var circleTitle = document.createElementNS(svgNS, "title");
+        circleTitle.textContent = t.channel + " · 좋아요 합계 " + t.likes.toLocaleString();
+        circle.appendChild(circleTitle);
+        svg.appendChild(circle);
 
-        var pathData = "";
-        s.points.forEach(function (v, i) {
-          if (v == null) return;
-          pathData += (pathData === "" ? "M" : "L") + xPos(i) + "," + yPos(v) + " ";
-        });
-        if (!pathData) return;
-
-        var path = document.createElementNS(svgNS, "path");
-        path.setAttribute("d", pathData.trim());
-        path.setAttribute("fill", "none");
-        path.setAttribute("stroke", color);
-        path.setAttribute("stroke-width", isPriority ? "3" : "1.5");
-        path.setAttribute("stroke-linecap", "round");
-        path.setAttribute("stroke-linejoin", "round");
-        if (!isPriority) path.setAttribute("opacity", "0.75");
-        var pathTitle = document.createElementNS(svgNS, "title");
-        pathTitle.textContent = s.channel;
-        path.appendChild(pathTitle);
-        svg.appendChild(path);
-
-        s.points.forEach(function (v, i) {
-          if (v == null) return;
-          var circle = document.createElementNS(svgNS, "circle");
-          circle.setAttribute("cx", xPos(i));
-          circle.setAttribute("cy", yPos(v));
-          circle.setAttribute("r", isPriority ? "4" : "2.5");
-          circle.setAttribute("fill", color);
-          var circleTitle = document.createElementNS(svgNS, "title");
-          circleTitle.textContent = s.channel + " · " + data.dates[i] + " · 조회수 " + v.toLocaleString();
-          circle.appendChild(circleTitle);
-          svg.appendChild(circle);
-        });
+        var likeLabel = document.createElementNS(svgNS, "text");
+        likeLabel.setAttribute("x", bandCenterX(i));
+        likeLabel.setAttribute("y", cy - 8);
+        likeLabel.setAttribute("text-anchor", "middle");
+        likeLabel.setAttribute("font-size", "10");
+        likeLabel.setAttribute("font-weight", "700");
+        likeLabel.setAttribute("fill", HISTORY_LINE_COLOR);
+        likeLabel.textContent = t.likes.toLocaleString();
+        svg.appendChild(likeLabel);
       });
 
       container.appendChild(svg);
-
-      // 범례: 색상만으로 구분하지 않도록 CJ는 굵은 글씨로도 구분한다(§8-1).
-      var legend = document.createElement("div");
-      legend.className = "history-chart-legend";
-      data.series.forEach(function (s) {
-        var isPriority = s.channel === HISTORY_PRIORITY_CHANNEL;
-        var item = document.createElement("span");
-        item.className = "history-legend-item" + (isPriority ? " is-priority" : "");
-
-        var swatch = document.createElement("span");
-        swatch.className = "history-legend-swatch";
-        swatch.style.background = isPriority ? HISTORY_HIGHLIGHT_COLOR : HISTORY_MUTED_COLOR;
-        item.appendChild(swatch);
-
-        var label = document.createElement("span");
-        label.textContent = s.channel;
-        item.appendChild(label);
-
-        legend.appendChild(item);
-      });
-      container.appendChild(legend);
     }
 
     /* ── 히스토리 표 필터 (날짜 범위 + 채널) ── */
@@ -1890,8 +2314,9 @@
       });
     }
 
-    historyFilterStartEl.addEventListener("change", renderHistoryTable);
-    historyFilterEndEl.addEventListener("change", renderHistoryTable);
+    // 날짜 필터는 표뿐 아니라 그래프(선택 기간 합계)에도 영향을 준다. 채널 필터는 표 전용.
+    historyFilterStartEl.addEventListener("change", function () { renderHistoryChart(); renderHistoryTable(); });
+    historyFilterEndEl.addEventListener("change", function () { renderHistoryChart(); renderHistoryTable(); });
     historyFilterChannelEl.addEventListener("change", renderHistoryTable);
 
     async function loadHistory() {
