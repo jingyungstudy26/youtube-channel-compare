@@ -9,7 +9,7 @@ const fs = require("fs");
 const path = require("path");
 
 const API_KEY = process.env.YOUTUBE_API_KEY;
-const VIDEOS_PER_CHANNEL = 10;
+const VIDEOS_PER_CHANNEL = 100;
 const CHANNELS_PATH = path.join(__dirname, "..", "..", "data", "channels.json");
 const HISTORY_PATH = path.join(__dirname, "..", "..", "data", "history.csv");
 const CSV_HEADERS = [
@@ -74,26 +74,45 @@ async function fetchChannelByHandle(handle) {
 }
 
 // 업로드 재생목록에서 최신 영상 ID 목록을 가져온다.
+// 유튜브 API는 한 번의 요청으로 최대 50개까지만 준다. count가 50 이하면 요청 1번으로 끝나고,
+// 그보다 크면(예: 100) 필요한 만큼만 더 나눠서 요청한다.
 async function fetchLatestVideoIds(uploadsPlaylistId, count) {
-  var url = "https://www.googleapis.com/youtube/v3/playlistItems"
-    + "?part=contentDetails&maxResults=" + count
-    + "&playlistId=" + uploadsPlaylistId
-    + "&key=" + API_KEY;
-  var json = await fetchJson(url);
-  return (json.items || []).map(function (item) {
-    return item.contentDetails.videoId;
-  });
+  var ids = [];
+  var pageToken = "";
+
+  while (ids.length < count) {
+    var remaining = count - ids.length;
+    var url = "https://www.googleapis.com/youtube/v3/playlistItems"
+      + "?part=contentDetails&maxResults=" + Math.min(50, remaining)
+      + "&playlistId=" + uploadsPlaylistId
+      + (pageToken ? "&pageToken=" + pageToken : "")
+      + "&key=" + API_KEY;
+    var json = await fetchJson(url);
+    var items = json.items || [];
+    items.forEach(function (item) { ids.push(item.contentDetails.videoId); });
+
+    if (!json.nextPageToken || items.length === 0) break;
+    pageToken = json.nextPageToken;
+  }
+
+  return ids.slice(0, count);
 }
 
-// 영상 ID 목록으로 제목/업로드일/길이/통계를 한 번에 가져온다.
+// 영상 ID 목록으로 제목/업로드일/길이/통계를 가져온다.
+// videos.list는 한 번에 최대 50개 ID까지만 받아준다. 그보다 많으면 50개씩 나눠서 여러 번 호출한다.
 async function fetchVideoDetails(videoIds) {
-  if (videoIds.length === 0) return [];
-  var url = "https://www.googleapis.com/youtube/v3/videos"
-    + "?part=snippet,contentDetails,statistics"
-    + "&id=" + videoIds.join(",")
-    + "&key=" + API_KEY;
-  var json = await fetchJson(url);
-  return json.items || [];
+  var all = [];
+  for (var i = 0; i < videoIds.length; i += 50) {
+    var chunk = videoIds.slice(i, i + 50);
+    if (chunk.length === 0) continue;
+    var url = "https://www.googleapis.com/youtube/v3/videos"
+      + "?part=snippet,contentDetails,statistics"
+      + "&id=" + chunk.join(",")
+      + "&key=" + API_KEY;
+    var json = await fetchJson(url);
+    all = all.concat(json.items || []);
+  }
+  return all;
 }
 
 async function collectChannel(channelConfig) {
@@ -134,6 +153,7 @@ async function main() {
 
   var channels = JSON.parse(fs.readFileSync(CHANNELS_PATH, "utf8"));
   var rows = [];
+  var failedHandles = [];
 
   // 채널 하나가 실패해도(예: 핸들 오류) 나머지 채널은 계속 수집한다.
   for (var i = 0; i < channels.length; i++) {
@@ -142,8 +162,19 @@ async function main() {
       rows = rows.concat(channelRows);
       console.log("완료: @" + channels[i].handle + " (" + channelRows.length + "개 영상)");
     } catch (err) {
+      failedHandles.push(channels[i].handle);
       console.error("실패: @" + channels[i].handle + " → " + err.message);
     }
+  }
+
+  // 채널이 하나라도 등록돼 있는데 전부 실패해서 수집된 행이 0개면,
+  // (예: API 키 제한/만료) 겉으로는 "성공"인데 실제로는 아무것도 안 쌓이는 상황을 막기 위해
+  // 여기서 실패로 처리한다 — Actions 화면에 빨간 X로 떠야 바로 알아챌 수 있다.
+  if (channels.length > 0 && rows.length === 0) {
+    throw new Error(
+      "모든 채널(" + failedHandles.length + "개) 수집 실패 → API 키/네트워크 문제일 가능성이 높습니다. "
+      + "실패 목록: " + failedHandles.join(", ")
+    );
   }
 
   var fileExists = fs.existsSync(HISTORY_PATH);
