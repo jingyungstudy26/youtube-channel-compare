@@ -1,6 +1,10 @@
 // 매일 자동 실행되는 유튜브 데이터 수집 스크립트.
-// data/channels.json에 등록된 채널마다 최신 영상 몇 개의 통계를 가져와
-// data/history.csv 맨 끝에 새 행으로 쌓는다(누적, append-only).
+// data/channels.json에 등록된 채널마다, data/collect-config.json에 적힌 날짜(collectSince) 이후에
+// 올라온 영상 "전부"의 통계를 가져와 data/history.csv 맨 끝에 새 행으로 쌓는다(누적, append-only).
+// 개수 상한은 없고, 대신 업로드일 기준 시작 날짜로만 범위를 제한한다.
+//
+// collectSince 날짜를 바꾸고 싶으면 코드를 건드릴 필요 없이
+// data/collect-config.json 파일의 "collectSince" 값만 고쳐서 GitHub에 다시 올리면 된다.
 //
 // 실행 방식: .github/workflows/daily-collect.yml 이 매일 자동으로 이 파일을 node로 실행한다.
 // 필요한 환경변수: YOUTUBE_API_KEY (저장소 Secrets에 등록된 값)
@@ -9,8 +13,8 @@ const fs = require("fs");
 const path = require("path");
 
 const API_KEY = process.env.YOUTUBE_API_KEY;
-const VIDEOS_PER_CHANNEL = 100;
 const CHANNELS_PATH = path.join(__dirname, "..", "..", "data", "channels.json");
+const CONFIG_PATH = path.join(__dirname, "..", "..", "data", "collect-config.json");
 const HISTORY_PATH = path.join(__dirname, "..", "..", "data", "history.csv");
 const CSV_HEADERS = [
   "VIDEO_ID", "업로드일", "Channel", "Content", "링크", "조회일자", "조회시간", "Type", "Views", "Likes", "Comments"
@@ -73,29 +77,46 @@ async function fetchChannelByHandle(handle) {
   };
 }
 
-// 업로드 재생목록에서 최신 영상 ID 목록을 가져온다.
-// 유튜브 API는 한 번의 요청으로 최대 50개까지만 준다. count가 50 이하면 요청 1번으로 끝나고,
-// 그보다 크면(예: 100) 필요한 만큼만 더 나눠서 요청한다.
-async function fetchLatestVideoIds(uploadsPlaylistId, count) {
+// data/collect-config.json에서 수집 시작 날짜(collectSince, "YYYY-MM-DD")를 읽는다.
+function loadCollectSince() {
+  var config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+  if (!config.collectSince || !/^\d{4}-\d{2}-\d{2}$/.test(config.collectSince)) {
+    throw new Error("data/collect-config.json의 collectSince 값이 없거나 'YYYY-MM-DD' 형식이 아닙니다.");
+  }
+  return config.collectSince;
+}
+
+// 업로드 재생목록은 최신 영상이 맨 앞에 오도록 정렬돼 있다.
+// sinceDate(업로드일) 이후 영상을 앞에서부터 전부 모으다가, sinceDate보다 오래된 영상을 만나면
+// 그 뒤는 더 볼 필요가 없으므로 페이지 요청을 멈춘다(개수 상한 없음, 시작 날짜로만 범위 제한).
+async function fetchVideoIdsSince(uploadsPlaylistId, sinceDate) {
   var ids = [];
   var pageToken = "";
 
-  while (ids.length < count) {
-    var remaining = count - ids.length;
+  while (true) {
     var url = "https://www.googleapis.com/youtube/v3/playlistItems"
-      + "?part=contentDetails&maxResults=" + Math.min(50, remaining)
+      + "?part=contentDetails&maxResults=50"
       + "&playlistId=" + uploadsPlaylistId
       + (pageToken ? "&pageToken=" + pageToken : "")
       + "&key=" + API_KEY;
     var json = await fetchJson(url);
     var items = json.items || [];
-    items.forEach(function (item) { ids.push(item.contentDetails.videoId); });
 
-    if (!json.nextPageToken || items.length === 0) break;
+    var reachedOlderVideo = false;
+    for (var i = 0; i < items.length; i++) {
+      var publishedAt = (items[i].contentDetails.videoPublishedAt || "").slice(0, 10);
+      if (publishedAt && publishedAt < sinceDate) {
+        reachedOlderVideo = true;
+        break;
+      }
+      ids.push(items[i].contentDetails.videoId);
+    }
+
+    if (reachedOlderVideo || !json.nextPageToken || items.length === 0) break;
     pageToken = json.nextPageToken;
   }
 
-  return ids.slice(0, count);
+  return ids;
 }
 
 // 영상 ID 목록으로 제목/업로드일/길이/통계를 가져온다.
@@ -115,9 +136,9 @@ async function fetchVideoDetails(videoIds) {
   return all;
 }
 
-async function collectChannel(channelConfig) {
+async function collectChannel(channelConfig, sinceDate) {
   var channel = await fetchChannelByHandle(channelConfig.handle);
-  var videoIds = await fetchLatestVideoIds(channel.uploadsPlaylistId, VIDEOS_PER_CHANNEL);
+  var videoIds = await fetchVideoIdsSince(channel.uploadsPlaylistId, sinceDate);
   var videos = await fetchVideoDetails(videoIds);
   return videos.map(function (v) {
     var durationSeconds = parseDurationSeconds(v.contentDetails.duration);
@@ -151,6 +172,9 @@ async function main() {
     }
   }
 
+  var sinceDate = loadCollectSince();
+  console.log(sinceDate + " 이후 업로드된 영상을 전체 수집합니다(개수 상한 없음).");
+
   var channels = JSON.parse(fs.readFileSync(CHANNELS_PATH, "utf8"));
   var rows = [];
   var failedHandles = [];
@@ -158,7 +182,7 @@ async function main() {
   // 채널 하나가 실패해도(예: 핸들 오류) 나머지 채널은 계속 수집한다.
   for (var i = 0; i < channels.length; i++) {
     try {
-      var channelRows = await collectChannel(channels[i]);
+      var channelRows = await collectChannel(channels[i], sinceDate);
       rows = rows.concat(channelRows);
       console.log("완료: @" + channels[i].handle + " (" + channelRows.length + "개 영상)");
     } catch (err) {
@@ -167,10 +191,11 @@ async function main() {
     }
   }
 
-  // 채널이 하나라도 등록돼 있는데 전부 실패해서 수집된 행이 0개면,
-  // (예: API 키 제한/만료) 겉으로는 "성공"인데 실제로는 아무것도 안 쌓이는 상황을 막기 위해
-  // 여기서 실패로 처리한다 — Actions 화면에 빨간 X로 떠야 바로 알아챌 수 있다.
-  if (channels.length > 0 && rows.length === 0) {
+  // 채널이 하나라도 등록돼 있는데 전부 실패했으면(예: API 키 제한/만료),
+  // 겉으로는 "성공"인데 실제로는 아무것도 안 쌓이는 상황을 막기 위해 여기서 실패로 처리한다
+  // — Actions 화면에 빨간 X로 떠야 바로 알아챌 수 있다.
+  // (수집 대상 영상이 진짜로 0개라 rows가 비는 것과, 채널 조회 자체가 실패한 것은 구분한다.)
+  if (channels.length > 0 && failedHandles.length === channels.length) {
     throw new Error(
       "모든 채널(" + failedHandles.length + "개) 수집 실패 → API 키/네트워크 문제일 가능성이 높습니다. "
       + "실패 목록: " + failedHandles.join(", ")
